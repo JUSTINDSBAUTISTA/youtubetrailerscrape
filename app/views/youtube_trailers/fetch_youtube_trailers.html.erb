@@ -1,0 +1,26 @@
+<h1>Scraped YouTube Data</h1>
+
+<% if @youtube_data.present? %>
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Thumbnail</th>
+        <th>Description</th>
+        <th>Video</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @youtube_data.each do |data| %>
+        <tr>
+          <td><%= data[:title] %></td>
+          <td><img src="<%= data[:thumbnail] %>" width="120" alt="Thumbnail"></td>
+          <td><%= data[:description] %></td>
+          <td><a href="<%= "/videos/#{data[:video_id]}-video.mp4" %>" download>Download Video</a></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <p>No data was fetched.</p>
+<% end %>
