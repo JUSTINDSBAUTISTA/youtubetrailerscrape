@@ -1,0 +1,10 @@
+<h1>YouTube Trailer Scraper</h1>
+<%= form_with url: fetch_youtube_trailers_youtube_trailers_path, method: :post, multipart: true do |form| %>
+  <div class="field">
+    <%= form.label :file, "Upload CSV file" %>
+    <%= form.file_field :file %>
+  </div>
+  <div class="actions">
+    <%= form.submit "Scrape YouTube Data" %>
+  </div>
+<% end %>
