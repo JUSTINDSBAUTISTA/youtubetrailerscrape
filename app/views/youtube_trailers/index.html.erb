@@ -43,7 +43,8 @@
         document.querySelector("form").submit(); // Submit the form after starting progress tracking
       });
 
-      // Function to fetch scraping progress
+      let lastReportedProgress = 0;
+
       function fetchProgress() {
         fetch("<%= progress_youtube_trailers_path %>")
           .then(response => response.json())
@@ -52,11 +53,15 @@
             const total = data.total || 1;
             const percentage = Math.floor((current / total) * 100);
 
-            progressBar.style.width = `${percentage}%`;
-            progressBar.textContent = `${percentage}%`;
+            if (percentage > lastReportedProgress) {
+              lastReportedProgress = percentage; // Update the last reported progress
+              progressBar.style.width = `${percentage}%`;
+              progressBar.textContent = `${percentage}%`;
+            }
 
             if (percentage < 100) {
-              setTimeout(fetchProgress, 200); // Poll every 200 ms
+              const nextInterval = percentage < 50 ? 2000 : 5000; // Increase interval as progress increases
+              setTimeout(fetchProgress, nextInterval);
             } else {
               // Show the expand/collapse button when scraping is complete
               expandCollapseButton.style.display = "block";

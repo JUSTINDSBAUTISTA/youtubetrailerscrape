@@ -3,7 +3,7 @@ Rails.application.routes.draw do
     collection do
       post :fetch_youtube_trailers
       get :download_zip
-      get :progress # Add the progress route here if it's missing
+      get :progress
     end
   end
 
