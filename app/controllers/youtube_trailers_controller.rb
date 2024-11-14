@@ -101,7 +101,7 @@ class YoutubeTrailersController < ApplicationController
     File.rename(downloaded_thumbnail_path, thumbnail_path) if downloaded_thumbnail_path && downloaded_thumbnail_path != thumbnail_path
 
     # Download video
-    video_command = "yt-dlp --proxy \"\" -f mp4 -o \"#{video_output_path}\" \"#{youtube_link}\""
+    video_command = "yt-dlp --proxy \"\" -f \"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]\" -o \"#{video_output_path}\" \"#{youtube_link}\""
     system(video_command)
 
     # Return metadata
