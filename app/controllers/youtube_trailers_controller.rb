@@ -71,24 +71,34 @@ class YoutubeTrailersController < ApplicationController
   end
 
   def scrape_youtube_data(youtube_link, id_tag)
-    html = fetch_youtube_html(youtube_link)
-    return {} if html.nil?
+    # Define paths using id_tag from CSV
+    folder_path = Rails.root.join("public", "scraped_data", id_tag)
+    video_output_path = Rails.root.join("public", "videos", "#{id_tag}")
 
-    video_details = parse_youtube_html(html)
-    if video_details.blank?
-      Rails.logger.error "Failed to parse YouTube HTML for #{youtube_link}"
-      return {}
-    end
+    # Ensure directory exists
+    FileUtils.mkdir_p(folder_path)
 
-    save_scraped_data(video_details, id_tag)
+    # Download and save video
+    download_successful = download_youtube_video(youtube_link, video_output_path)
 
-    # Attempt video download; log if unsuccessful
-    unless download_youtube_video(youtube_link, id_tag)
+    # Save additional data only if download is successful
+    if download_successful
+      video_details = parse_youtube_html(fetch_youtube_html(youtube_link))
+      return {} if video_details.blank?
+
+      # Save the title, description, and thumbnail using id_tag from CSV
+      File.write(folder_path.join("#{id_tag}-Title.txt"), video_details[:title])
+      File.write(folder_path.join("#{id_tag}-Description.txt"), video_details[:description])
+      download_image(video_details[:thumbnail], folder_path.join("#{id_tag}-Image.jpg"))
+
+      # Return video details to be appended to the list
+      video_details.merge(video_path: video_output_path, idTag: id_tag)
+    else
       Rails.logger.error "Failed to download video for #{youtube_link}"
+      {}
     end
-
-    video_details
   end
+
 
   def download_youtube_video(youtube_link, id_tag)
     Rails.logger.info "Attempting to download video for #{youtube_link}"
@@ -184,16 +194,34 @@ class YoutubeTrailersController < ApplicationController
         id_tag = data[:idTag]
         next if id_tag.nil?
 
-        folder_path = Rails.root.join("public", "scraped_data", id_tag)
+        Rails.logger.info "Adding files for ID #{id_tag} to the ZIP archive."
 
-        zipfile.add("#{id_tag}/#{id_tag}-image.jpg", folder_path.join("#{id_tag}-image.jpg")) if File.exist?(folder_path.join("#{id_tag}-image.jpg"))
-        zipfile.add("#{id_tag}/#{id_tag}-Title.txt", folder_path.join("#{id_tag}-Title.txt")) if File.exist?(folder_path.join("#{id_tag}-Title.txt"))
-        zipfile.add("#{id_tag}/#{id_tag}-Description.txt", folder_path.join("#{id_tag}-Description.txt")) if File.exist?(folder_path.join("#{id_tag}-Description.txt"))
-        zipfile.add("#{id_tag}/#{id_tag}-video.mp4", Rails.root.join("public", "videos", "#{id_tag}-video.mp4")) if File.exist?(Rails.root.join("public", "videos", "#{id_tag}-video.mp4"))
+        # Define paths
+        folder_path = Rails.root.join("public", "scraped_data", id_tag)
+        video_path = Rails.root.join("public", "videos", "#{id_tag}-video.mp4")
+
+        # Check for and add each file to the ZIP
+        %w[Description.txt Image.jpg Title.txt].each do |suffix|
+          file_path = folder_path.join("#{id_tag}-#{suffix}")
+          if File.exist?(file_path)
+            zipfile.add("#{id_tag}/#{id_tag}-#{suffix}", file_path)
+            Rails.logger.info "Added #{file_path} to ZIP."
+          else
+            Rails.logger.warn "#{suffix.capitalize} file not found at #{file_path}."
+          end
+        end
+
+        # Add video if it exists
+        if File.exist?(video_path)
+          zipfile.add("#{id_tag}/#{id_tag}-video.mp4", video_path)
+          Rails.logger.info "Added #{video_path} to ZIP."
+        else
+          Rails.logger.warn "Video file not found at #{video_path}."
+        end
       end
     end
-    Rails.logger.info "ZIP file created at #{zip_file_path}"
 
-    zip_file_path # Return the path for further use
+    Rails.logger.info "ZIP file created at #{zip_file_path}"
+    zip_file_path
   end
 end
