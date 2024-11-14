@@ -15,6 +15,12 @@ class YoutubeTrailersController < ApplicationController
 
     @youtube_data = []
     today_date = Date.today.strftime("%Y-%m-%d")
+    @batch_folder = Rails.root.join("public", "#{today_date}-Batch")
+
+    # Create main batch folder and subdirectories
+    %w[Thumbnail_Image Video_Title Video_Description Video].each do |subfolder|
+      FileUtils.mkdir_p(@batch_folder.join(subfolder))
+    end
 
     csv_data = CSV.read(file_path, headers: true)
     @@progress[:total] = csv_data.size
@@ -24,6 +30,9 @@ class YoutubeTrailersController < ApplicationController
       youtube_link = row["YoutubeLink"]
       id_tag = row["idTag"]
 
+      # Change VPN location every LINKS_BEFORE_LOCATION_CHANGE downloads
+      change_vpn_location if (index % LINKS_BEFORE_LOCATION_CHANGE).zero? && index != 0
+
       youtube_data = scrape_youtube_data(youtube_link, id_tag)
       @youtube_data << youtube_data if youtube_data.present?
 
@@ -32,13 +41,13 @@ class YoutubeTrailersController < ApplicationController
 
       # Simulate finer progress by incrementing in small steps
       (1..5).each do |i|
-        @@progress[:current] = index + (i * 0.2) # Each step represents a small fraction
+        @@progress[:current] = index + (i * 0.2)
         sleep(0.1) # Short delay to simulate gradual progress in the front end
       end
     end
 
     # Save data to JSON for display on the index page
-    json_file_path = Rails.root.join("public", "scraped_data", "youtube_data.json")
+    json_file_path = @batch_folder.join("youtube_data.json")
     File.write(json_file_path, @youtube_data.to_json)
 
     # Generate ZIP file if data exists
@@ -50,12 +59,9 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
-
   # Method to retrieve scraping progress
   def progress
-    # Log progress to check data being sent
     Rails.logger.info "Progress: #{@@progress[:current]} / #{@@progress[:total]}"
-
     render json: {
       current: @@progress[:current] || 0,
       total: @@progress[:total] || 1 # Avoid division by zero
@@ -72,11 +78,10 @@ class YoutubeTrailersController < ApplicationController
 
   def scrape_youtube_data(youtube_link, id_tag)
     # Define paths using id_tag from CSV
-    folder_path = Rails.root.join("public", "scraped_data", id_tag)
-    video_output_path = Rails.root.join("public", "videos", "#{id_tag}")
-
-    # Ensure directory exists
-    FileUtils.mkdir_p(folder_path)
+    thumbnail_path = @batch_folder.join("Thumbnail_Image", "#{id_tag}-Image.jpg")
+    title_path = @batch_folder.join("Video_Title", "#{id_tag}-Title.txt")
+    description_path = @batch_folder.join("Video_Description", "#{id_tag}-Description.txt")
+    video_output_path = @batch_folder.join("Video", "#{id_tag}-Video.mp4")
 
     # Download and save video
     download_successful = download_youtube_video(youtube_link, video_output_path)
@@ -87,9 +92,9 @@ class YoutubeTrailersController < ApplicationController
       return {} if video_details.blank?
 
       # Save the title, description, and thumbnail using id_tag from CSV
-      File.write(folder_path.join("#{id_tag}-Title.txt"), video_details[:title])
-      File.write(folder_path.join("#{id_tag}-Description.txt"), video_details[:description])
-      download_image(video_details[:thumbnail], folder_path.join("#{id_tag}-Image.jpg"))
+      File.write(title_path, video_details[:title])
+      File.write(description_path, video_details[:description])
+      download_image(video_details[:thumbnail], thumbnail_path)
 
       # Return video details to be appended to the list
       video_details.merge(video_path: video_output_path, idTag: id_tag)
@@ -99,19 +104,11 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
-
-  def download_youtube_video(youtube_link, id_tag)
+  def download_youtube_video(youtube_link, video_output_path)
     Rails.logger.info "Attempting to download video for #{youtube_link}"
 
-    # Ensure the output directory exists
-    output_dir = Rails.root.join("public", "videos")
-    FileUtils.mkdir_p(output_dir)
-
-    # Define the output path for the video
-    output_path = output_dir.join("#{id_tag}-video.mp4")
-
     # Construct the command for yt-dlp
-    command = "yt-dlp --proxy \"\" -f mp4 -o '#{output_path}' '#{youtube_link}'"
+    command = "yt-dlp --proxy \"\" -f mp4 -o '#{video_output_path}' '#{youtube_link}'"
 
     # Log the command for verification
     Rails.logger.info "Running command: #{command}"
@@ -121,12 +118,11 @@ class YoutubeTrailersController < ApplicationController
     Rails.logger.info "Command output: #{output}"
 
     # Check the download success by verifying if the file exists
-    video_exists = File.exist?(output_path)
+    video_exists = File.exist?(video_output_path)
     Rails.logger.info "Download successful? #{video_exists}"
 
     video_exists
   end
-
 
   def parse_youtube_html(html)
     Rails.logger.info "Parsing YouTube HTML..."
@@ -157,23 +153,6 @@ class YoutubeTrailersController < ApplicationController
     nil
   end
 
-  def save_scraped_data(video_details, id_tag)
-    folder_path = Rails.root.join("public", "scraped_data", id_tag)
-    FileUtils.mkdir_p(folder_path)
-
-    # Save thumbnail image
-    Rails.logger.info "Saving thumbnail for #{id_tag}..."
-    download_image(video_details[:thumbnail], folder_path.join("#{id_tag}-image.jpg"))
-
-    # Save title
-    Rails.logger.info "Saving title for #{id_tag}..."
-    File.write(folder_path.join("#{id_tag}-Title.txt"), video_details[:title])
-
-    # Save description
-    Rails.logger.info "Saving description for #{id_tag}..."
-    File.write(folder_path.join("#{id_tag}-Description.txt"), video_details[:description])
-  end
-
   def download_image(image_url, save_path)
     File.open(save_path, "wb") do |file|
       file.write URI.open(image_url).read
@@ -190,33 +169,11 @@ class YoutubeTrailersController < ApplicationController
 
     # Create a zip file
     Zip::File.open(zip_file_path, Zip::File::CREATE) do |zipfile|
-      youtube_data.each do |data|
-        id_tag = data[:idTag]
-        next if id_tag.nil?
-
-        Rails.logger.info "Adding files for ID #{id_tag} to the ZIP archive."
-
-        # Define paths
-        folder_path = Rails.root.join("public", "scraped_data", id_tag)
-        video_path = Rails.root.join("public", "videos", "#{id_tag}-video.mp4")
-
-        # Check for and add each file to the ZIP
-        %w[Description.txt Image.jpg Title.txt].each do |suffix|
-          file_path = folder_path.join("#{id_tag}-#{suffix}")
-          if File.exist?(file_path)
-            zipfile.add("#{id_tag}/#{id_tag}-#{suffix}", file_path)
-            Rails.logger.info "Added #{file_path} to ZIP."
-          else
-            Rails.logger.warn "#{suffix.capitalize} file not found at #{file_path}."
-          end
-        end
-
-        # Add video if it exists
-        if File.exist?(video_path)
-          zipfile.add("#{id_tag}/#{id_tag}-video.mp4", video_path)
-          Rails.logger.info "Added #{video_path} to ZIP."
-        else
-          Rails.logger.warn "Video file not found at #{video_path}."
+      %w[Thumbnail_Image Video_Title Video_Description Video].each do |subfolder|
+        subfolder_path = @batch_folder.join(subfolder)
+        Dir.glob("#{subfolder_path}/*").each do |file|
+          zipfile.add("#{subfolder}/#{File.basename(file)}", file)
+          Rails.logger.info "Added #{file} to ZIP."
         end
       end
     end
