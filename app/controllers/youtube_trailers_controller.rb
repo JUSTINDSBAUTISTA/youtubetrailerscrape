@@ -4,7 +4,7 @@ require "zip"
 require "pp"
 
 class YoutubeTrailersController < ApplicationController
-  LINKS_BEFORE_LOCATION_CHANGE = 15
+  LINKS_BEFORE_LOCATION_CHANGE = 10
 
   @@progress = { current: 0, total: 0 }
 
@@ -34,12 +34,21 @@ class YoutubeTrailersController < ApplicationController
       change_vpn_location if (index % LINKS_BEFORE_LOCATION_CHANGE).zero? && index != 0
 
       youtube_data = scrape_youtube_data(youtube_link, id_tag)
-      @youtube_data << youtube_data if youtube_data.present?
+      if youtube_data.present?
+        # Read contents of title and description files
+        youtube_data[:title_content] = File.read(youtube_data[:title]) if File.exist?(youtube_data[:title])
+        youtube_data[:description_content] = File.read(youtube_data[:description]) if File.exist?(youtube_data[:description])
+
+        # Convert file paths to URLs relative to the `public` folder
+        youtube_data[:thumbnail_url] = "/#{today_date}-Batch/Thumbnail_Image/#{id_tag}-Image.jpg"
+        youtube_data[:video_url] = "/#{today_date}-Batch/Video/#{id_tag}-Video.mp4"
+
+        # Add the data to the array for JSON output
+        @youtube_data << youtube_data.slice(:title_content, :description_content, :thumbnail_url, :video_url, :idTag)
+      end
 
       # Update the main progress after each video is processed
       @@progress[:current] = index + 1
-
-      # Simulate finer progress by incrementing in small steps
       (1..5).each do |i|
         @@progress[:current] = index + (i * 0.2)
         sleep(0.1) # Short delay to simulate gradual progress in the front end
@@ -59,7 +68,7 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
-  # Method to retrieve scraping progress
+
   def progress
     Rails.logger.info "Progress: #{@@progress[:current]} / #{@@progress[:total]}"
     render json: {
@@ -70,95 +79,45 @@ class YoutubeTrailersController < ApplicationController
 
   private
 
+  def scrape_youtube_data(youtube_link, id_tag)
+    title_path = @batch_folder.join("Video_Title", "#{id_tag}-Title.txt")
+    description_path = @batch_folder.join("Video_Description", "#{id_tag}-Description.txt")
+    thumbnail_path = @batch_folder.join("Thumbnail_Image", "#{id_tag}-Image.jpg")
+    video_output_path = @batch_folder.join("Video", "#{id_tag}-Video.mp4")
+
+    # Download title
+    title = `yt-dlp --proxy "" --print "title" --skip-download "#{youtube_link}"`.strip
+    File.write(title_path, title)
+
+    # Download description
+    description_command = "yt-dlp --proxy \"\" --write-description --skip-download -o \"#{description_path}\" \"#{youtube_link}\""
+    system(description_command)
+    File.rename("#{description_path}.description", description_path) if File.exist?("#{description_path}.description")
+
+    # Download thumbnail (forcing to .jpg format)
+    thumbnail_command = "yt-dlp --proxy \"\" --write-thumbnail --skip-download -o \"#{thumbnail_path}\" \"#{youtube_link}\""
+    system(thumbnail_command)
+    downloaded_thumbnail_path = Dir.glob("#{thumbnail_path}*").find { |f| f =~ /\.jpg|\.webp$/ }
+    File.rename(downloaded_thumbnail_path, thumbnail_path) if downloaded_thumbnail_path && downloaded_thumbnail_path != thumbnail_path
+
+    # Download video
+    video_command = "yt-dlp --proxy \"\" -f mp4 -o \"#{video_output_path}\" \"#{youtube_link}\""
+    system(video_command)
+
+    # Return metadata
+    {
+      title: title_path,
+      description: description_path,
+      thumbnail: thumbnail_path,
+      video: video_output_path,
+      idTag: id_tag
+    }
+  end
+
   def change_vpn_location
     Rails.logger.info "Changing VPN location..."
     system("osascript #{Rails.root.join('location_handler.scpt')}")
     sleep(10) # Allow extra time for VPN to connect
-  end
-
-  def scrape_youtube_data(youtube_link, id_tag)
-    # Define paths using id_tag from CSV
-    thumbnail_path = @batch_folder.join("Thumbnail_Image", "#{id_tag}-Image.jpg")
-    title_path = @batch_folder.join("Video_Title", "#{id_tag}-Title.txt")
-    description_path = @batch_folder.join("Video_Description", "#{id_tag}-Description.txt")
-    video_output_path = @batch_folder.join("Video", "#{id_tag}-Video.mp4")
-
-    # Download and save video
-    download_successful = download_youtube_video(youtube_link, video_output_path)
-
-    # Save additional data only if download is successful
-    if download_successful
-      video_details = parse_youtube_html(fetch_youtube_html(youtube_link))
-      return {} if video_details.blank?
-
-      # Save the title, description, and thumbnail using id_tag from CSV
-      File.write(title_path, video_details[:title])
-      File.write(description_path, video_details[:description])
-      download_image(video_details[:thumbnail], thumbnail_path)
-
-      # Return video details to be appended to the list
-      video_details.merge(video_path: video_output_path, idTag: id_tag)
-    else
-      Rails.logger.error "Failed to download video for #{youtube_link}"
-      {}
-    end
-  end
-
-  def download_youtube_video(youtube_link, video_output_path)
-    Rails.logger.info "Attempting to download video for #{youtube_link}"
-
-    # Construct the command for yt-dlp
-    command = "yt-dlp --proxy \"\" -f mp4 -o '#{video_output_path}' '#{youtube_link}'"
-
-    # Log the command for verification
-    Rails.logger.info "Running command: #{command}"
-
-    # Run the command and capture output
-    output = `#{command}`
-    Rails.logger.info "Command output: #{output}"
-
-    # Check the download success by verifying if the file exists
-    video_exists = File.exist?(video_output_path)
-    Rails.logger.info "Download successful? #{video_exists}"
-
-    video_exists
-  end
-
-  def parse_youtube_html(html)
-    Rails.logger.info "Parsing YouTube HTML..."
-    doc = Nokogiri::HTML(html)
-    script_tag = doc.css("script").find { |s| s.text.include?("ytInitialPlayerResponse") }
-    return unless script_tag
-
-    json_text = script_tag.text.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/)
-    return unless json_text
-
-    json_data = JSON.parse(json_text[1]) rescue nil
-    return unless json_data && json_data["videoDetails"]
-
-    video_details = json_data["videoDetails"]
-    {
-      title: video_details["title"],
-      thumbnail: video_details["thumbnail"]["thumbnails"].last["url"],
-      description: video_details["shortDescription"],
-      video_id: video_details["videoId"]
-    }
-  end
-
-  def fetch_youtube_html(youtube_link)
-    Rails.logger.info "Fetching HTML for #{youtube_link}..."
-    URI.open(youtube_link).read
-  rescue OpenURI::HTTPError => e
-    Rails.logger.error "Failed to fetch YouTube HTML: #{e.message}"
-    nil
-  end
-
-  def download_image(image_url, save_path)
-    File.open(save_path, "wb") do |file|
-      file.write URI.open(image_url).read
-    end
-  rescue => e
-    Rails.logger.error "Failed to download image #{image_url}: #{e.message}"
   end
 
   def generate_zip_file(youtube_data, date)
