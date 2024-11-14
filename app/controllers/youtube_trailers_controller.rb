@@ -4,13 +4,11 @@ require "zip"
 require "pp"
 
 class YoutubeTrailersController < ApplicationController
-  LINKS_BEFORE_LOCATION_CHANGE = 15 # Change location every 15 downloads
+  LINKS_BEFORE_LOCATION_CHANGE = 15
 
-  def index
-    json_file_path = Rails.root.join("public", "scraped_data", "youtube_data.json")
-    @youtube_data = File.exist?(json_file_path) ? JSON.parse(File.read(json_file_path)) : []
-  end
+  @@progress = { current: 0, total: 0 }
 
+  # Initialize progress for scraping
   def fetch_youtube_trailers
     uploaded_file = params[:file]
     file_path = uploaded_file.tempfile.path
@@ -18,34 +16,33 @@ class YoutubeTrailersController < ApplicationController
     @youtube_data = []
     today_date = Date.today.strftime("%Y-%m-%d")
 
-    # Process each row in the CSV
-    CSV.foreach(file_path, headers: true).with_index do |row, index|
+    csv_data = CSV.read(file_path, headers: true)
+    @@progress[:total] = csv_data.size
+    @@progress[:current] = 0
+
+    csv_data.each_with_index do |row, index|
       youtube_link = row["YoutubeLink"]
       id_tag = row["idTag"]
-      Rails.logger.info "Processing YouTube link: #{youtube_link} with ID tag: #{id_tag}"
-
-      # Change VPN location every LINKS_BEFORE_LOCATION_CHANGE downloads
-      change_vpn_location if (index % LINKS_BEFORE_LOCATION_CHANGE).zero? && index != 0
 
       youtube_data = scrape_youtube_data(youtube_link, id_tag)
       @youtube_data << youtube_data if youtube_data.present?
+
+      # Update the main progress after each video is processed
+      @@progress[:current] = index + 1
+
+      # Simulate finer progress by incrementing in small steps
+      (1..5).each do |i|
+        @@progress[:current] = index + (i * 0.2) # Each step represents a small fraction
+        sleep(0.1) # Short delay to simulate gradual progress in the front end
+      end
     end
 
-    # Save data to a JSON file instead of flash
+    # Save data to JSON for display on the index page
     json_file_path = Rails.root.join("public", "scraped_data", "youtube_data.json")
     File.write(json_file_path, @youtube_data.to_json)
 
-    # Generate ZIP file if there is data
+    # Generate ZIP file if data exists
     if @youtube_data.any?
-      @youtube_data.each_with_index do |data, index|
-        puts "\nVideo ##{index + 1}"
-        puts "Title: #{data[:title]}"
-        puts "Thumbnail: #{data[:thumbnail]}"
-        puts "Description: #{data[:description].truncate(100)}" # Shorten long descriptions
-        puts "Video ID: #{data[:video_id]}"
-        puts "-" * 50
-      end
-
       zip_file_path = generate_zip_file(@youtube_data, today_date)
       send_file zip_file_path, type: "application/zip", disposition: "attachment", filename: "#{today_date}_youtube_trailers_data.zip"
     else
@@ -53,6 +50,17 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
+
+  # Method to retrieve scraping progress
+  def progress
+    # Log progress to check data being sent
+    Rails.logger.info "Progress: #{@@progress[:current]} / #{@@progress[:total]}"
+
+    render json: {
+      current: @@progress[:current] || 0,
+      total: @@progress[:total] || 1 # Avoid division by zero
+    }
+  end
 
   private
 
