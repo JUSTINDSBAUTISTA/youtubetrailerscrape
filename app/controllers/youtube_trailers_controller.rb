@@ -37,7 +37,6 @@ class YoutubeTrailersController < ApplicationController
 
     # Generate ZIP file if there is data
     if @youtube_data.any?
-      puts "Here..."
       @youtube_data.each_with_index do |data, index|
         puts "\nVideo ##{index + 1}"
         puts "Title: #{data[:title]}"
@@ -93,16 +92,23 @@ class YoutubeTrailersController < ApplicationController
     # Define the output path for the video
     output_path = output_dir.join("#{id_tag}-video.mp4")
 
-    # Use yt-dlp with additional flags to avoid proxy settings
-    # Explicitly disable proxy with `--no-proxy` option
-    command = "yt-dlp --no-proxy -f mp4 -o '#{output_path}' '#{youtube_link}'"
-    system(command)
+    # Construct the command for yt-dlp
+    command = "yt-dlp --proxy \"\" -f mp4 -o '#{output_path}' '#{youtube_link}'"
 
-    # Verify the downloaded file
+    # Log the command for verification
+    Rails.logger.info "Running command: #{command}"
+
+    # Run the command and capture output
+    output = `#{command}`
+    Rails.logger.info "Command output: #{output}"
+
+    # Check the download success by verifying if the file exists
     video_exists = File.exist?(output_path)
     Rails.logger.info "Download successful? #{video_exists}"
+
     video_exists
   end
+
 
   def parse_youtube_html(html)
     Rails.logger.info "Parsing YouTube HTML..."
