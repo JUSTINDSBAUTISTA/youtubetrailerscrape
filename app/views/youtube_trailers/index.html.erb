@@ -1,9 +1,57 @@
-<%= form_with url: fetch_youtube_trailers_youtube_trailers_path, method: :post, multipart: true, class: "form-container" do |form| %>
-  <div class="form-group">
-    <%= form.label :file, "Upload CSV file", class: "form-label" %>
-    <%= form.file_field :file, class: "form-input" %>
+<div class="container">
+  <h1>YouTube Trailer Scraper</h1>
+  <%= form_with url: fetch_youtube_trailers_youtube_trailers_path, method: :post, multipart: true, class: "form-container" do |form| %>
+    <div class="form-group">
+      <%= form.label :file, "Upload CSV file", class: "form-label" %>
+      <%= form.file_field :file, class: "form-input" %>
+    </div>
+    <div class="form-actions">
+      <%= form.submit "Scrape YouTube Data", class: "submit-btn", id: "scrape-button" %>
+    </div>
+  <% end %>
+
+  <div class="progress-bar-container" id="progress-bar-container" style="display: none;">
+    <div class="progress-bar" id="progress-bar">0%</div>
   </div>
-  <div class="form-actions">
-    <%= form.submit "Scrape YouTube Data", class: "submit-btn" %>
-  </div>
-<% end %>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      const scrapeButton = document.getElementById("scrape-button");
+      const progressBarContainer = document.getElementById("progress-bar-container");
+      const progressBar = document.getElementById("progress-bar");
+
+      scrapeButton.addEventListener("click", function(event) {
+        event.preventDefault(); // Prevent form submission to enable real-time progress
+
+        progressBarContainer.style.display = "block";
+        progressBar.style.width = "0%";
+        progressBar.textContent = "0%";
+
+        fetchProgress(); // Start checking the progress
+
+        document.querySelector("form").submit(); // Submit the form after starting progress tracking
+      });
+
+        function fetchProgress() {
+          fetch("<%= progress_youtube_trailers_path %>")
+            .then(response => response.json())
+            .then(data => {
+              const current = data.current || 0; // Ensure current is a number
+              const total = data.total || 1;     // Ensure total is not zero to avoid NaN
+              
+              const percentage = Math.floor((current / total) * 100);
+              
+              progressBar.style.width = `${percentage}%`;
+              progressBar.textContent = `${percentage}%`;
+
+              if (percentage < 100) {
+                setTimeout(fetchProgress, 200); // Poll every 200 ms
+
+              }
+            })
+            .catch(error => console.error("Error fetching progress:", error));
+        }
+
+    });
+  </script>
+</div>
