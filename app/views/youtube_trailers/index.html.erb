@@ -1,5 +1,7 @@
 <div class="container">
   <h1>YouTube Trailer Scraper</h1>
+
+  <!-- Form for uploading CSV -->
   <%= form_with url: fetch_youtube_trailers_path, method: :post, multipart: true, class: "form-container" do |form| %>
     <div class="form-group">
       <%= form.label :file, "Upload CSV file", class: "form-label" %>
@@ -14,6 +16,30 @@
   <div class="progress-bar-container" id="progress-bar-container" style="display: none;">
     <div class="progress-bar" id="progress-bar">0%</div>
   </div>
+
+  <!-- Message section -->
+  <div id="status-message"></div>
+
+  <!-- Retry scraping for failed entries -->
+  <% if @failed_links.present? %>
+    <h2>Retry Failed Links</h2>
+    <%= form_with url: retry_failed_youtube_trailers_path, method: :post, class: "form-container" do |form| %>
+      <ul>
+        <% @failed_links.each do |failed| %>
+          <li>
+            <%= failed["idTag"] %>: <%= failed["YoutubeLink"] %>
+          </li>
+        <% end %>
+      </ul>
+      <div class="form-actions">
+        <%= form.submit "Retry Failed", class: "retry-btn" %>
+      </div>
+    <% end %>
+  <% elsif @all_success %>
+    <div class="success-message">
+      <h2>All links have been successfully scraped!</h2>
+    </div>
+  <% end %>
 
   <!-- Button to expand/collapse video list, hidden initially -->
   <button id="expand-collapse-button" style="display: none;" class="expand-collapse-btn">Expand All</button>
@@ -63,26 +89,20 @@
               const nextInterval = percentage < 50 ? 2000 : 5000; // Increase interval as progress increases
               setTimeout(fetchProgress, nextInterval);
             } else {
-              // Show the expand/collapse button when scraping is complete
-              expandCollapseButton.style.display = "block";
+              expandCollapseButton.style.display = "block"; // Show the expand button
               loadVideoList(); // Load video list after scraping completes
             }
           })
           .catch(error => console.error("Error fetching progress:", error));
       }
 
-      // Function to load the video list into the container
+      // Load video list
       function loadVideoList() {
-        const todayDate = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+        const todayDate = new Date().toISOString().split('T')[0];
         const jsonUrl = `/${todayDate}-Batch/youtube_data.json`;
 
         fetch(jsonUrl)
-          .then(response => {
-            if (!response.ok) {
-              throw new Error("Network response was not ok");
-            }
-            return response.json();
-          })
+          .then(response => response.json())
           .then(data => {
             videoListContainer.innerHTML = data.map(video => `
               <div class="video-item">
@@ -101,7 +121,7 @@
           .catch(error => console.error("Error loading video list:", error));
       }
 
-      // Toggle expand/collapse of video list
+      // Toggle expand/collapse
       expandCollapseButton.addEventListener("click", function() {
         if (videoListContainer.style.display === "none") {
           videoListContainer.style.display = "block";
