@@ -1,6 +1,6 @@
 <div class="container">
   <h1>YouTube Trailer Scraper</h1>
-  <%= form_with url: fetch_youtube_trailers_youtube_trailers_path, method: :post, multipart: true, class: "form-container" do |form| %>
+  <%= form_with url: fetch_youtube_trailers_path, method: :post, multipart: true, class: "form-container" do |form| %>
     <div class="form-group">
       <%= form.label :file, "Upload CSV file", class: "form-label" %>
       <%= form.file_field :file, class: "form-input" %>

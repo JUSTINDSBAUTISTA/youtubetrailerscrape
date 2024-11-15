@@ -9,7 +9,7 @@ class YoutubeTrailersController < ApplicationController
   @@progress = { current: 0, total: 0 }
 
   # Initialize progress for scraping
-  def fetch_youtube_trailers
+  def fetch
     uploaded_file = params[:file]
     file_path = uploaded_file.tempfile.path
 
