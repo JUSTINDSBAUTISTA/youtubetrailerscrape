@@ -2,8 +2,9 @@ Rails.application.routes.draw do
   resources :youtube_trailers, only: [ :index, :show ] do
     collection do
       post :fetch
-      get :download_zip
+      post :retry_failed
       get :progress
+      get :download_zip # Ensure this route is included for ZIP downloads
     end
   end
 
