@@ -95,7 +95,6 @@
           });
       }
 
-
       // Load video list
       function loadVideoList() {
         const todayDate = new Date().toISOString().split('T')[0];
@@ -107,11 +106,27 @@
           .then(data => {
             // Filter data to include only successfully scraped videos
             const successfulVideos = data.filter(video => video.success === 1);
+            const invalidVideos = data.filter(video => video.success === 0);
+            
 
+            if (data.message === "Data scraping and upload completed successfully.") {
+              window.location.href = "/youtube_trailers/download_zip";
+            }
+
+            if (invalidVideos.length > 0) {
+                let message = "Invalid links:\n";
+                invalidVideos.forEach((video, index) => {
+                    message += `${index + 1}. idTag: ${video.idTag} - ${video.YoutubeLink}\n`;
+                });
+
+                alert(message);
+                console.log("Invalid links:", invalidVideos);
+            }
             console.log("Successfully scraped videos:", successfulVideos);
 
             videoListContainer.innerHTML = successfulVideos.map(video => `
               <div class="video-item">
+                <h1>${video.idTag}</h1>
                 <iframe 
                   class="video-frame" 
                   width="560" 
@@ -133,8 +148,6 @@
         const match = link.match(/v=([a-zA-Z0-9_-]+)/);
         return match ? match[1] : '';
       }
-
-
 
       // Toggle expand/collapse
       expandCollapseButton.addEventListener("click", function() {
