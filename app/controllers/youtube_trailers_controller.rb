@@ -24,7 +24,19 @@ class YoutubeTrailersController < ApplicationController
     @@progress[:total] = csv_data.size
     @@progress[:current] = 0
 
-    # Prepare updated CSV file and youtube_data.json
+    # Check CSV headers to determine its type
+    if csv_data.headers == %w[idTag YoutubeLink]
+      # New CSV file logic
+      handle_new_csv(csv_data)
+    elsif csv_data.headers == %w[idTag YoutubeLink success failure]
+      # Updated CSV file logic
+      handle_updated_csv(csv_data)
+    else
+      redirect_to youtube_trailers_path, alert: "Invalid CSV format. Please upload a valid file."
+    end
+  end
+
+  def handle_new_csv(csv_data)
     updated_csv_path = Rails.root.join("public", "updated_links.csv")
     youtube_data = []
 
@@ -51,17 +63,46 @@ class YoutubeTrailersController < ApplicationController
       end
     end
 
-    # Write youtube_data.json file inside the batch folder
     youtube_data_path = @batch_folder.join("youtube_data.json")
     File.write(youtube_data_path, youtube_data.to_json)
+  end
 
-    # Generate ZIP file
-    if Dir.exist?(@batch_folder)
-      zip_file_path = generate_zip_file(today_date)
-      send_file zip_file_path, type: "application/zip", disposition: "attachment", filename: "#{today_date}_youtube_trailers_data.zip"
-    else
-      redirect_to youtube_trailers_path, alert: "No data was available to scrape."
+  def handle_updated_csv(csv_data)
+    failed_rows = csv_data.select { |row| row["failure"] == "1" }
+
+    if failed_rows.empty?
+      redirect_to youtube_trailers_path, notice: "All links are successfully scraped."
+      return
     end
+
+    updated_csv_path = Rails.root.join("public", "updated_links.csv")
+    youtube_data = []
+
+    CSV.open(updated_csv_path, "wb") do |csv|
+      csv << %w[idTag YoutubeLink success failure] # Write headers again
+
+      failed_rows.each_with_index do |row, index|
+        youtube_link = row["YoutubeLink"]
+        id_tag = row["idTag"]
+
+        change_vpn_location if (index % LINKS_BEFORE_LOCATION_CHANGE).zero? && index != 0
+
+        success = scrape_youtube_data(youtube_link, id_tag)
+
+        youtube_data << {
+          idTag: id_tag,
+          YoutubeLink: youtube_link,
+          success: success ? 1 : 0,
+          failure: success ? 0 : 1
+        }
+
+        csv << [ id_tag, youtube_link, success ? 1 : 0, success ? 0 : 1 ]
+        @@progress[:current] = index + 1
+      end
+    end
+
+    youtube_data_path = @batch_folder.join("youtube_data.json")
+    File.write(youtube_data_path, youtube_data.to_json)
   end
 
   def retry_failed
@@ -104,12 +145,12 @@ class YoutubeTrailersController < ApplicationController
       end
     end
 
-    # Write youtube_data.json file inside the retry batch folder
     youtube_data_path = @batch_folder.join("youtube_data.json")
     File.write(youtube_data_path, youtube_data.to_json)
 
     redirect_to youtube_trailers_path, notice: "Retry completed. Check the updated CSV."
   end
+
 
   def progress
     render json: {
@@ -121,24 +162,39 @@ class YoutubeTrailersController < ApplicationController
   private
 
   def scrape_youtube_data(youtube_link, id_tag)
+    # Basic validation for a valid YouTube link
+    unless youtube_link =~ /\Ahttps:\/\/(www\.)?youtube\.com\/watch\?v=.+/
+      Rails.logger.error("Invalid YouTube link: #{youtube_link}")
+      return false # Mark as failure
+    end
+
     title_path = @batch_folder.join("Video_Title", "#{id_tag}-Title.txt")
     description_path = @batch_folder.join("Video_Description", "#{id_tag}-Description.txt")
     thumbnail_path = @batch_folder.join("Thumbnail_Image", "#{id_tag}-Image.jpg")
     video_output_path = @batch_folder.join("Video", "#{id_tag}-Video.mp4")
 
     begin
+      # Fetch title
       title = `yt-dlp --proxy "" --print "title" --skip-download "#{youtube_link}"`.strip
+      if title.empty?
+        Rails.logger.error("Failed to retrieve title for: #{youtube_link}")
+        return false # Mark as failure
+      end
+
       File.write(title_path, title)
 
+      # Fetch description
       description_command = "yt-dlp --proxy \"\" --write-description --skip-download -o \"#{description_path}\" \"#{youtube_link}\""
       system(description_command)
       File.rename("#{description_path}.description", description_path) if File.exist?("#{description_path}.description")
 
+      # Fetch thumbnail
       thumbnail_command = "yt-dlp --proxy \"\" --write-thumbnail --skip-download -o \"#{thumbnail_path}\" \"#{youtube_link}\""
       system(thumbnail_command)
       downloaded_thumbnail_path = Dir.glob("#{thumbnail_path}*").find { |f| f =~ /\.jpg|\.webp$/ }
       File.rename(downloaded_thumbnail_path, thumbnail_path) if downloaded_thumbnail_path && downloaded_thumbnail_path != thumbnail_path
 
+      # Fetch video
       video_command = "yt-dlp --proxy \"\" -f \"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]\" -o \"#{video_output_path}\" \"#{youtube_link}\""
       system(video_command)
 
