@@ -56,7 +56,6 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
-
   # Retry failed uploads
   def retry_failed
     file_path = Rails.root.join("tmp", "updated_links.csv")
@@ -87,10 +86,7 @@ class YoutubeTrailersController < ApplicationController
     }
   end
 
-
-
   private
-
 
   # Handle a new CSV
   def handle_new_csv(csv_data, today_date)
@@ -244,12 +240,9 @@ class YoutubeTrailersController < ApplicationController
     Rails.logger.error(@@current_log)
   end
 
-
   def s3_file_exists?(key)
     s3_client.bucket(ENV["AWS_BUCKET_NAME"]).object(key).exists?
   end
-
-
 
   # Upload ZIP to S3
   def upload_zip_to_s3(zip_file, today_date)
@@ -289,7 +282,6 @@ class YoutubeTrailersController < ApplicationController
       Rails.logger.info("ZIP file updated and uploaded to S3: #{zip_key}")
     end
   end
-
 
   # S3 Client Configuration
   def s3_client
