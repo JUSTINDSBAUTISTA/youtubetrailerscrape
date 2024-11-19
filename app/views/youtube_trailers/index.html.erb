@@ -5,7 +5,7 @@
   <%= form_with url: fetch_youtube_trailers_path, method: :post, multipart: true, class: "form-container" do |form| %>
     <div class="form-group">
       <%= form.label :file, "Upload CSV file", class: "form-label" %>
-      <%= form.file_field :file, class: "form-input" %>
+      <%= form.file_field :file, class: "form-input", required: true %>
     </div>
     <div class="form-actions">
       <%= form.submit "Scrape YouTube Data", class: "submit-btn", id: "scrape-button" %>
@@ -13,152 +13,100 @@
   <% end %>
 
   <!-- Progress bar for scraping process -->
-  <div class="progress-bar-container" id="progress-bar-container" style="display: none;">
-    <div class="progress-bar" id="progress-bar">0%</div>
-  </div>
-
-  <!-- Message section -->
-  <div id="status-message"></div>
-
-  <!-- Retry scraping for failed entries -->
-  <% if @failed_links.present? %>
-    <h2>Retry Failed Links</h2>
-    <%= form_with url: retry_failed_youtube_trailers_path, method: :post, class: "form-container" do |form| %>
-      <ul>
-        <% @failed_links.each do |failed| %>
-          <li>
-            <%= failed["idTag"] %>: <%= failed["YoutubeLink"] %>
-          </li>
-        <% end %>
-      </ul>
-      <div class="form-actions">
-        <%= form.submit "Retry Failed", class: "retry-btn" %>
-      </div>
-    <% end %>
-  <% elsif @all_success %>
-    <div class="success-message">
-      <h2>All links have been successfully scraped!</h2>
+  <div class="progress-bar-container" id="progress-bar-container" style="display: none; margin-top: 20px;">
+    <div class="progress-bar" id="progress-bar" style="width: 0%; background-color: #4caf50; color: white; text-align: center; padding: 5px 0;">
+      0%
     </div>
-  <% end %>
-
-  <!-- Button to expand/collapse video list, hidden initially -->
-  <button id="expand-collapse-button" style="display: none;" class="expand-collapse-btn">Expand All</button>
-
-  <!-- Container for video list -->
-  <div id="video-list-container" class="video-list-container" style="display: none;">
-    <!-- Video list content will be loaded here -->
   </div>
+
+  <!-- Status message -->
+  <div id="status-message" style="margin-top: 10px; font-weight: bold; color: #333;"></div>
 
   <script>
     document.addEventListener("DOMContentLoaded", function() {
       const scrapeButton = document.getElementById("scrape-button");
       const progressBarContainer = document.getElementById("progress-bar-container");
       const progressBar = document.getElementById("progress-bar");
-      const expandCollapseButton = document.getElementById("expand-collapse-button");
-      const videoListContainer = document.getElementById("video-list-container");
+      const statusMessage = document.getElementById("status-message");
 
       scrapeButton.addEventListener("click", function(event) {
-        event.preventDefault(); // Prevent form submission to enable real-time progress
+        event.preventDefault(); // Prevent default form submission for real-time progress tracking
 
+        // Reset progress bar and status message
         progressBarContainer.style.display = "block";
         progressBar.style.width = "0%";
         progressBar.textContent = "0%";
+        statusMessage.textContent = "Starting the scraping process...";
 
-        fetchProgress(); // Start checking the progress
+        // Start progress tracking
+        fetchProgress();
 
-        document.querySelector("form").submit(); // Submit the form after starting progress tracking
+        // Submit the form
+        document.querySelector("form").submit();
       });
-
-      let lastReportedProgress = 0;
 
       function fetchProgress() {
         fetch("<%= progress_youtube_trailers_path %>")
-          .then(response => response.json())
+          .then(response => {
+            if (!response.ok) throw new Error("Failed to fetch progress.");
+            return response.json();
+          })
           .then(data => {
             const current = data.current || 0;
             const total = data.total || 1;
             const percentage = Math.floor((current / total) * 100);
 
+            // Update progress bar
             progressBar.style.width = `${percentage}%`;
             progressBar.textContent = `${percentage}%`;
 
             if (percentage < 100) {
-              setTimeout(fetchProgress, 1000); // Check progress every second
+              // Keep checking progress until completed
+              setTimeout(fetchProgress, 1000);
             } else {
-              expandCollapseButton.style.display = "block"; // Show the expand button
-              loadVideoList(); // Load video list after scraping completes
+              statusMessage.textContent = "Scraping completed successfully! Preparing your download...";
+
+              // Trigger ZIP download once scraping is complete
+              downloadZipFile();
             }
           })
           .catch(error => {
             console.error("Error fetching progress:", error);
-            setTimeout(fetchProgress, 2000); // Retry in case of an error
+            statusMessage.textContent = "Error tracking progress. Retrying...";
+            setTimeout(fetchProgress, 2000); // Retry fetching progress
           });
       }
 
-      // Load video list
-      function loadVideoList() {
-        const todayDate = new Date().toISOString().split('T')[0];
-        const jsonUrl = `/${todayDate}-Batch/youtube_data.json`;
-        console.log("Path:", jsonUrl);
-        
-        fetch(jsonUrl)
-          .then(response => response.json())
-          .then(data => {
-            // Filter data to include only successfully scraped videos
-            const successfulVideos = data.filter(video => video.success === 1);
-            const invalidVideos = data.filter(video => video.success === 0);
-            
+      function downloadZipFile() {
+        const today = new Date().toISOString().split("T")[0]; // Get today's date in YYYY-MM-DD format
+        const zipName = `${today}-Batch/youtube_trailers_data.zip`; // Generate the expected ZIP name
 
-            if (data.message === "Data scraping and upload completed successfully.") {
-              window.location.href = "/youtube_trailers/download_zip";
+        fetch(`/youtube_trailers/download_zip?zip_name=${encodeURIComponent(zipName)}`)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`Failed to download ZIP file. Status: ${response.status}`);
             }
-
-            if (invalidVideos.length > 0) {
-                let message = "Invalid links:\n";
-                invalidVideos.forEach((video, index) => {
-                    message += `${index + 1}. idTag: ${video.idTag} - ${video.YoutubeLink}\n`;
-                });
-
-                alert(message);
-                console.log("Invalid links:", invalidVideos);
-            }
-            console.log("Successfully scraped videos:", successfulVideos);
-
-            videoListContainer.innerHTML = successfulVideos.map(video => `
-              <div class="video-item">
-                <h1>${video.idTag}</h1>
-                <iframe 
-                  class="video-frame" 
-                  width="560" 
-                  height="315" 
-                  src="https://www.youtube.com/embed/${extractYouTubeID(video.YoutubeLink)}" 
-                  frameborder="0" 
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                  allowfullscreen>
-                </iframe>
-              </div>
-            `).join('');
-            videoListContainer.style.display = "none";
+            return response.blob();
           })
-          .catch(error => console.error("Error loading video list:", error));
+          .then(blob => {
+            // Create a link to download the ZIP file
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = downloadUrl;
+            link.download = "youtube_trailers_data.zip";
+            document.body.appendChild(link);
+            link.click(); // Trigger download
+            link.remove();
+            URL.revokeObjectURL(downloadUrl); // Clean up URL object
+            statusMessage.textContent = "Download completed!";
+          })
+          .catch(error => {
+            console.error("Error downloading ZIP file:", error.message);
+            statusMessage.textContent = "Error: Unable to download ZIP file. Please try again.";
+          });
       }
 
-      // Utility function to extract YouTube video ID from a link
-      function extractYouTubeID(link) {
-        const match = link.match(/v=([a-zA-Z0-9_-]+)/);
-        return match ? match[1] : '';
-      }
 
-      // Toggle expand/collapse
-      expandCollapseButton.addEventListener("click", function() {
-        if (videoListContainer.style.display === "none") {
-          videoListContainer.style.display = "block";
-          expandCollapseButton.textContent = "Collapse";
-        } else {
-          videoListContainer.style.display = "none";
-          expandCollapseButton.textContent = "Expand All";
-        }
-      });
     });
   </script>
 </div>
