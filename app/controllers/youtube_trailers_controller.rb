@@ -283,6 +283,12 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
+  def upload_to_s3(key, file_path)
+    obj = s3_client.bucket(ENV["AWS_BUCKET_NAME"]).object(key)
+    obj.upload_file(file_path.to_s)
+    Rails.logger.info("Uploaded to S3: #{key}")
+  end
+
   # S3 Client Configuration
   def s3_client
     @s3_client ||= Aws::S3::Resource.new(
