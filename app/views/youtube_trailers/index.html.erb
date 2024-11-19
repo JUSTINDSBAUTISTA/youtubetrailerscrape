@@ -60,11 +60,15 @@
             progressBar.style.width = `${percentage}%`;
             progressBar.textContent = `${percentage}%`;
 
+            // Update status message with the current log
+            const currentLog = data.current_log || "Processing...";
+            statusMessage.textContent = `Progress: ${current}/${total}. ${currentLog}`;
+
             if (percentage < 100) {
               // Keep checking progress until completed
               setTimeout(fetchProgress, 1000);
             } else {
-              statusMessage.textContent = "Scraping completed successfully! Preparing your download...";
+              statusMessage.textContent = "Scraping completed successfully! Preparing your download zip file...";
             }
           })
           .catch(error => {
