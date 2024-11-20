@@ -1,82 +1,337 @@
-<div class="container">
-  <h1>YouTube Trailer Scraper</h1>
+<div id="main-content">
+  <div class="container">
+    <h1>YouTube Trailer Scraper</h1>
 
-  <!-- Form for uploading CSV -->
-  <%= form_with url: fetch_youtube_trailers_path, method: :post, multipart: true, class: "form-container" do |form| %>
-    <div class="form-group">
-      <%= form.label :file, "Upload CSV file", class: "form-label" %>
-      <%= form.file_field :file, class: "form-input", required: true %>
-    </div>
-    <div class="form-actions">
-      <%= form.submit "Scrape YouTube Data", class: "submit-btn", id: "scrape-button" %>
-    </div>
-  <% end %>
+    <!-- Form for uploading CSV -->
+    <%= form_with url: fetch_youtube_trailers_path, method: :post, multipart: true, class: "form-container", id: "scrape-form" do |form| %>
+      <div class="form-group">
+        <%= form.label :file, "Upload CSV file", class: "form-label" %>
+        <%= form.file_field :file, class: "form-input", required: true %>
+      </div>
+      <div class="form-actions" id="form-actions">
+        <%= form.submit "Start Scraping", class: "submit-btn", id: "scrape-button" %>
+        <button class="control-btn" id="pause-button" style="background-color: #ff9800; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Pause</button>
+        <button class="control-btn" id="resume-button" style="background-color: #4caf50; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Continue</button>
+        <button class="control-btn" id="stop-button" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Stop</button>
+        <button class="control-btn" id="reset-button" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Reset</button>
+      </div>
+    <% end %>
 
-  <!-- Progress bar for scraping process -->
-  <div class="progress-bar-container" id="progress-bar-container" style="display: none; margin-top: 20px;">
-    <div class="progress-bar" id="progress-bar" style="width: 0%; background-color: #4caf50; color: white; text-align: center; padding: 5px 0;">
-      0%
+    <!-- Timer display -->
+    <div id="timer-container" style="text-align: center; margin-top: 20px;">
+      <h3>Elapsed Time: <span id="timer-display" style="font-weight: bold;">00:00:00</span></h3>
+    </div>
+
+    <!-- Progress bar for scraping process -->
+    <div class="progress-bar-container" id="progress-bar-container" style="display: none; margin-top: 20px;">
+      <div class="progress-bar" id="progress-bar" style="width: 0%; background-color: #4caf50; color: white; text-align: center; padding: 5px 0;">
+        0%
+      </div>
+    </div>
+
+    <!-- Status message -->
+    <div id="status-message" style="margin-top: 10px; font-weight: bold; color: #333; opacity: 0.5;"></div>
+
+    <!-- Successful and Unsuccessful tables -->
+    <div style="margin-top: 20px;">
+      <h3 style="margin-bottom: 0;">Successfully Scraped</h3>
+      <table id="successful-table" border="1" style="width: 100%; border-collapse: collapse;  margin-top: 0;">
+        <thead>
+          <tr>
+            <th style="padding: 10px; text-align: left;">ID Tag</th>
+            <th style="padding: 10px; text-align: left;">YouTube Link</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <h3 style="margin-bottom: 0;">Unsuccessfully Scraped</h3>
+      <table id="unsuccessful-table" border="1" style="width: 100%; border-collapse: collapse; margin-top: 0;">
+        <thead>
+          <tr>
+            <th style="padding: 10px; text-align: left; background-color: red;">ID Tag</th>
+            <th style="padding: 10px; text-align: left; background-color: red;">YouTube Link</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
+</div>
 
-  <!-- Status message -->
-  <div id="status-message" style="margin-top: 10px; font-weight: bold; color: #333;"></div>
+<!-- Modal for ZIP download confirmation -->
+<div id="download-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);">
+  <p>Scraping is complete. Would you like to download the ZIP file?</p>
+  <button id="confirm-download" style="background-color: #4caf50; color: white; padding: 10px 20px; border: none; cursor: pointer; margin-right: 10px;">Download</button>
+  <button id="cancel-download" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer;">Cancel</button>
+</div>
 
-  <script>
-    document.addEventListener("DOMContentLoaded", function() {
-      const scrapeButton = document.getElementById("scrape-button");
-      const progressBarContainer = document.getElementById("progress-bar-container");
-      const progressBar = document.getElementById("progress-bar");
-      const statusMessage = document.getElementById("status-message");
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const scrapeForm = document.getElementById("scrape-form");
+    const scrapeButton = document.getElementById("scrape-button");
+    const pauseButton = document.getElementById("pause-button");
+    const resumeButton = document.getElementById("resume-button");
+    const stopButton = document.getElementById("stop-button");
+    const resetButton = document.getElementById("reset-button");
+    const progressBarContainer = document.getElementById("progress-bar-container");
+    const progressBar = document.getElementById("progress-bar");
+    const statusMessage = document.getElementById("status-message");
+    const downloadModal = document.getElementById("download-modal");
+    const confirmDownload = document.getElementById("confirm-download");
+    const cancelDownload = document.getElementById("cancel-download");
+    const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+    const successfulTable = document.getElementById("successful-table")?.querySelector("tbody");
+    const unsuccessfulTable = document.getElementById("unsuccessful-table")?.querySelector("tbody");
+    const timerDisplay = document.getElementById("timer-display"); // Timer display element
 
-      scrapeButton.addEventListener("click", function(event) {
-        event.preventDefault(); // Prevent default form submission for real-time progress tracking
+    // Add a flag to determine if scraping is active
+    let isScrapingActive = false;
 
-        // Reset progress bar and status message
-        progressBarContainer.style.display = "block";
-        progressBar.style.width = "0%";
-        progressBar.textContent = "0%";
-        statusMessage.textContent = "Starting the scraping process...";
+    // Timer variables
+    let timerInterval = null;
+    let elapsedSeconds = 0;
 
-        // Start progress tracking
-        fetchProgress();
+    // Format elapsed time as HH:MM:SS
+    function formatTime(seconds) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      return `${hours.toString().padStart(2, "0")}:${minutes
+        .toString()
+        .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
 
-        // Submit the form
-        document.querySelector("form").submit();
+    // Start the timer
+    function startTimer() {
+      if (timerInterval) return; // Prevent multiple intervals
+      timerInterval = setInterval(() => {
+        elapsedSeconds++;
+        timerDisplay.textContent = formatTime(elapsedSeconds);
+      }, 1000);
+    }
+
+    // Pause the timer
+    function pauseTimer() {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    // Reset the timer
+    function resetTimer() {
+      pauseTimer();
+      elapsedSeconds = 0;
+      timerDisplay.textContent = "00:00:00";
+    }
+
+    scrapeButton.addEventListener("click", function (event) {
+      event.preventDefault();
+
+      // Set scraping as active
+      isScrapingActive = true;
+
+      // Start the timer
+      startTimer();
+
+      // Hide Start button and show Pause and Stop buttons
+      scrapeButton.style.display = "none";
+      pauseButton.style.display = "inline-block";
+      stopButton.style.display = "inline-block";
+
+      // Reset progress bar and status message
+      progressBarContainer.style.display = "block";
+      progressBar.style.width = "0%";
+      progressBar.textContent = "0%";
+      statusMessage.textContent = "Starting the scraping process...";
+
+      // Start progress tracking
+      fetchProgress();
+
+      // Submit the form
+      scrapeForm.submit();
+    });
+
+    pauseButton.addEventListener("click", function () {
+      pauseTimer(); // Pause the timer
+      fetch("/youtube_trailers/pause_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
+        .then(() => {
+          statusMessage.textContent = "Scraping paused.";
+          pauseButton.style.display = "none";
+          resumeButton.style.display = "inline-block"; // Show Resume button
+        })
+        .catch((error) => {
+          console.error("Error pausing scraping:", error);
+        });
+    });
+
+    resumeButton.addEventListener("click", function () {
+      startTimer(); // Resume the timer
+      fetch("/youtube_trailers/resume_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
+        .then(() => {
+          statusMessage.textContent = "Resuming scraping...";
+          resumeButton.style.display = "none";
+          pauseButton.style.display = "inline-block"; // Show Pause button again
+        })
+        .catch((error) => {
+          console.error("Error resuming scraping:", error);
+        });
+    });
+
+    stopButton.addEventListener("click", function () {
+      pauseTimer(); // Pause the timer
+      fetch("/youtube_trailers/stop_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
+        .then(() => {
+          isScrapingActive = false; // Mark scraping as inactive
+          statusMessage.textContent = "Scraping stopped.";
+          pauseButton.style.display = "none";
+          resumeButton.style.display = "none";
+          stopButton.style.display = "none";
+          scrapeButton.style.display = "inline-block"; // Show Start button again
+
+          // Show the modal after stopping
+          showDownloadModal();
+        })
+        .catch((error) => {
+          console.error("Error stopping scraping:", error);
+        });
+    });
+
+    resetButton.addEventListener("click", function () {
+      resetTimer(); // Reset the timer
+      fetch("/youtube_trailers/reset_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
+        .then(() => {
+          isScrapingActive = false; // Mark scraping as inactive
+          statusMessage.textContent = "";
+          progressBarContainer.style.display = "none";
+          pauseButton.style.display = "none";
+          resumeButton.style.display = "none";
+          stopButton.style.display = "none";
+          resetButton.style.display = "none";
+          downloadModal.style.display = "none";
+          scrapeButton.style.display = "inline-block"; // Show Start button again
+
+          // Clear the file input
+          const fileInput = scrapeForm.querySelector('input[type="file"]');
+          if (fileInput) {
+            fileInput.value = ""; // Reset the file input field
+          }
+
+          // Clear tables
+          if (successfulTable) successfulTable.innerHTML = "";
+          if (unsuccessfulTable) unsuccessfulTable.innerHTML = "";
+        })
+        .catch((error) => {
+          console.error("Error resetting scraping:", error);
+        });
+    });
+
+    function fetchProgress() {
+      if (!isScrapingActive) {
+        console.log("No active scraping session. Skipping progress fetch.");
+        return; // Exit if scraping is not active
+      }
+
+      fetch("<%= progress_youtube_trailers_path %>")
+        .then((response) => {
+          if (!response.ok) throw new Error("Failed to fetch progress.");
+          return response.json();
+        })
+        .then((data) => {
+          console.log("Progress data:", data);
+          const current = data.current || 0;
+          const total = data.total || 1;
+          const percentage = Math.floor((current / total) * 100);
+
+          // Update progress bar
+          progressBar.style.width = `${percentage}%`;
+          progressBar.textContent = `${percentage}%`;
+
+          // Update status message
+          const currentLog = data.current_log || "Processing...";
+          statusMessage.textContent = `Progress: ${current}/${total}. ${currentLog}`;
+
+          // Update tables
+          if (successfulTable && data.successful_details) {
+            populateTable(successfulTable, data.successful_details);
+          }
+
+          if (unsuccessfulTable && data.unsuccessful_details) {
+            populateTable(unsuccessfulTable, data.unsuccessful_details);
+          }
+
+          // Continue polling if not complete
+          if (percentage < 100 && !data.stopped) {
+            setTimeout(fetchProgress, 1000);
+          } else {
+            isScrapingActive = false; // Mark scraping as inactive
+            pauseButton.style.display = "none";
+            resumeButton.style.display = "none";
+            stopButton.style.display = "none";
+            resetButton.style.display = "inline-block";
+            statusMessage.textContent = "Scraping completed successfully!";
+            showDownloadModal();
+          }
+        })
+        .catch((error) => {
+          console.error("Error fetching progress:", error);
+          statusMessage.textContent = "Error tracking progress. Retrying...";
+          setTimeout(fetchProgress, 2000); // Retry fetching progress
+        });
+    }
+
+    function populateTable(table, data) {
+      table.innerHTML = ""; // Clear existing rows
+      data.forEach((row) => {
+        const tr = document.createElement("tr");
+        const idTagTd = document.createElement("td");
+        const linkTd = document.createElement("td");
+
+        idTagTd.textContent = row.idTag;
+        linkTd.innerHTML = `<a href="${row.YoutubeLink}" target="_blank">${row.YoutubeLink}</a>`;
+
+        tr.appendChild(idTagTd);
+        tr.appendChild(linkTd);
+        table.appendChild(tr);
+      });
+    }
+
+    function showDownloadModal() {
+      const mainContent = document.getElementById("main-content");
+
+      pauseTimer();
+
+      downloadModal.style.display = "block";
+      mainContent.classList.add("blur-background");
+
+      // Confirm download button
+      confirmDownload.addEventListener("click", function () {
+        downloadModal.style.display = "none";
+        scrapeButton.style.display = "none";
+        mainContent.classList.remove("blur-background");
+        window.location.href = "<%= download_zip_youtube_trailers_path(zip_name: "#{Date.today.strftime('%Y-%m-%d')}-Batch/youtube_trailers_data.zip") %>";
       });
 
-      function fetchProgress() {
-        fetch("<%= progress_youtube_trailers_path %>")
-          .then(response => {
-            if (!response.ok) throw new Error("Failed to fetch progress.");
-            return response.json();
-          })
-          .then(data => {
-            const current = data.current || 0;
-            const total = data.total || 1;
-            const percentage = Math.floor((current / total) * 100);
+      // Cancel download button
+      cancelDownload.addEventListener("click", function () {
+        downloadModal.style.display = "none";
+        mainContent.classList.remove("blur-background");
 
-            // Update progress bar
-            progressBar.style.width = `${percentage}%`;
-            progressBar.textContent = `${percentage}%`;
+        pauseTimer();
 
-            // Update status message with the current log
-            const currentLog = data.current_log || "Processing...";
-            statusMessage.textContent = `Progress: ${current}/${total}. ${currentLog}`;
+      });
+    }
 
-            if (percentage < 100) {
-              // Keep checking progress until completed
-              setTimeout(fetchProgress, 1000);
-            } else {
-              statusMessage.textContent = "Scraping completed successfully! Preparing your download zip file...";
-            }
-          })
-          .catch(error => {
-            console.error("Error fetching progress:", error);
-            statusMessage.textContent = "Error tracking progress. Retrying...";
-            setTimeout(fetchProgress, 2000); // Retry fetching progress
-          });
+    // Close modal when clicking outside (optional)
+    window.addEventListener("click", function (event) {
+      if (event.target === downloadModal) {
+        downloadModal.style.display = "none";
+        const mainContent = document.getElementById("main-content");
+        mainContent.classList.remove("blur-background");
+
+        pauseTimer();
       }
     });
-  </script>
-</div>
+  });
+</script>
