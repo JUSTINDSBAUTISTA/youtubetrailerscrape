@@ -4,15 +4,17 @@
     <title><%= content_for(:title) || "Youtubetrailerscrape" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="mobile-web-app-capable" content="yes">
+    
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
 
     <%= yield :head %>
 
     <link rel="manifest" href="/manifest.json">
-    <link rel="icon" href="/icon-512x512.png" type="image/png">
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="icon" href="/icon-192x192.png" type="image/png">
     <link rel="apple-touch-icon" href="/icon-192x192.png">
+    <link rel="icon" href="/icon-192x192.png" type="image/svg+xml">
+
     <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
 
@@ -41,11 +43,9 @@
       }
 
       .form-input {
-        width: 100%;
         padding: 8px;
         margin-top: 5px;
         border-radius: 3px;
-        border: 1px solid #ccc;
       }
 
       .form-actions {
@@ -72,7 +72,7 @@
         border-radius: 5px;
         overflow: hidden;
         width: 100%;
-        height: 20px;
+        height: 2em;
       }
 
       .progress-bar {
@@ -124,6 +124,89 @@
         border-radius: 5px;
         margin-bottom: 10px;
       }
+      .blur-background {
+        filter: blur(5px);
+        pointer-events: none;
+        opacity: 0.7;
+      }
+
+      #download-modal {
+        position: fixed;
+        z-index: 1000;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      /* General table styling */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        color: #333;
+        background-color: #f9f9f9;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      /* Table header styling */
+      table thead {
+        background-color: #4caf50;
+        color: white;
+        font-weight: bold;
+      }
+
+      table thead th {
+        padding: 12px 15px;
+        text-align: left;
+        border: 1px solid #ddd;
+      }
+
+      /* Table body styling */
+      table tbody tr {
+        transition: background-color 0.3s ease;
+      }
+
+      table tbody tr:hover {
+        background-color: #f1f1f1;
+      }
+
+      table tbody td {
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+      }
+
+      /* Links inside the table */
+      table tbody td a {
+        color: #4caf50;
+        text-decoration: none;
+        font-weight: bold;
+      }
+
+      table tbody td a:hover {
+        text-decoration: underline;
+      }
+
+      /* Add alternating row colors */
+      table tbody tr:nth-child(even) {
+        background-color: #f4f4f4;
+      }
+
+      /* Mobile responsive adjustments */
+      @media (max-width: 768px) {
+        table {
+          font-size: 12px;
+        }
+
+        table thead th, 
+        table tbody td {
+          padding: 8px 10px;
+        }
+      }
+
+      
 
     </style>
   </head>
