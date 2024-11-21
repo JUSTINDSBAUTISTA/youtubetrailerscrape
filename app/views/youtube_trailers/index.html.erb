@@ -54,6 +54,20 @@
         <tbody></tbody>
       </table>
     </div>
+
+    <div style="margin-top: 20px;">
+      <h3 style="margin-bottom: 0;">Invalid Links</h3>
+      <table id="invalid-table" border="1" style="width: 100%; border-collapse: collapse; margin-top: 0;">
+        <thead>
+          <tr>
+            <th style="padding: 10px; text-align: left; background-color: red;">ID Tag</th>
+            <th style="padding: 10px; text-align: left; background-color: red;">YouTube Link</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
   </div>
 </div>
 
@@ -77,7 +91,9 @@
     const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
     const successfulTable = document.getElementById("successful-table")?.querySelector("tbody");
     const unsuccessfulTable = document.getElementById("unsuccessful-table")?.querySelector("tbody");
-    const timerDisplay = document.getElementById("timer-display"); // Timer display element
+    const timerDisplay = document.getElementById("timer-display");
+    const invalidTable = document.getElementById("invalid-table")?.querySelector("tbody");
+
 
     // Timer variables
     let timerInterval = null;
@@ -135,6 +151,7 @@
       // Manually submit the form
       scrapeForm.submit();
     });
+    
     function fetchProgress() {
       fetch("<%= progress_youtube_trailers_path %>")
         .then((response) => {
@@ -163,6 +180,10 @@
 
           if (unsuccessfulTable && data.unsuccessful_details) {
             populateTable(unsuccessfulTable, data.unsuccessful_details);
+          }
+
+          if (invalidTable && data.invalid_details) {
+            populateTable(invalidTable, data.invalid_details); // Populate invalid table
           }
 
           // Show modal when ZIP is ready

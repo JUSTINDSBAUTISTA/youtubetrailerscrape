@@ -8,7 +8,8 @@ class YoutubeTrailersController < ApplicationController
     current: 0,
     total: 0,
     successful: [],
-    unsuccessful: []
+    unsuccessful: [],
+    invalid_links: []
   }
   @@current_log = ""
   @@zip_ready = false
@@ -141,8 +142,10 @@ class YoutubeTrailersController < ApplicationController
       current: @@progress[:current] || 0,
       successful_count: @@progress[:successful].size,
       unsuccessful_count: @@progress[:unsuccessful].size,
+      invalid_links_count: @@progress[:invalid_links].size, # This is critical
       successful_details: @@progress[:successful],
       unsuccessful_details: @@progress[:unsuccessful],
+      invalid_details: @@progress[:invalid_links], # This is where invalid links are passed
       current_log: @@current_log || "No logs yet.",
       total: @@progress[:total] || 1,
       zip_ready: @@zip_ready
@@ -158,12 +161,13 @@ class YoutubeTrailersController < ApplicationController
   end
 
   def scrape_youtube_data(youtube_link, id_tag, zip, today_date)
-    return false unless youtube_link =~ /\Ahttps:\/\/(www\.)?youtube\.com\/watch\?v=.+/
-
-    # Check if scraping should stop before starting
-    unless check_scraping_status
-      @@current_log = "Scraping stopped by user."
-      Rails.logger.info(@@current_log)
+    # Validate the YouTube link format
+    unless youtube_link =~ /\Ahttps:\/\/(www\.)?youtube\.com\/watch\?v=[\w\-]{11}\z/
+      # Add invalid links to `invalid_links` and skip further processing
+      @@progress[:invalid_links] << { idTag: id_tag, YoutubeLink: youtube_link }
+      Rails.logger.info("Invalid links: #{@@progress[:invalid_links]}")
+      @@current_log = "Invalid YouTube Link detected: #{youtube_link}"
+      Rails.logger.error(@@current_log)
       return false
     end
 
@@ -194,6 +198,7 @@ class YoutubeTrailersController < ApplicationController
       false
     end
   end
+
 
 
   private
@@ -397,7 +402,7 @@ class YoutubeTrailersController < ApplicationController
     `#{video_command}`
 
     if $? != 0
-      @@current_log = "Error downloading video for #{link}: Command failed with status #{$?.exitstatus}"
+      @@current_log = "Error downloading video: #{link}: Command failed with status #{$?.exitstatus}"
       Rails.logger.error(@@current_log)
       return false
     end
