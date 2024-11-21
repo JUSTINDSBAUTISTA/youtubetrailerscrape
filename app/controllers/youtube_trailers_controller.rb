@@ -11,7 +11,18 @@ class YoutubeTrailersController < ApplicationController
     unsuccessful: []
   }
   @@current_log = ""
-  @@scraping_status = { paused: false, stopped: false }
+  @@zip_ready = false
+  @@scraping_status = { stopped: false }
+
+  # Reset scraping state and clear cache
+  def reset
+    clean_tmp_directory # Clears temporary files
+    reset_progress # Resets in-memory progress variables
+    clean_up_state_files # Removes any stop or pause state files
+
+    Rails.logger.info("Reset complete. All temporary data cleared.")
+    redirect_to youtube_trailers_path, notice: "Reset complete. All temporary data cleared."
+  end
 
   # Deletes all files from the tmp directory
   def clean_tmp_directory
@@ -25,7 +36,7 @@ class YoutubeTrailersController < ApplicationController
       if File.directory?(file_path)
         FileUtils.rm_rf(file_path) # Remove directories recursively
       else
-        File.delete(file_path) # Remove regular files
+        File.delete(file_path) if File.exist?(file_path) # Remove files
       end
     end
     Rails.logger.info("Temporary files deleted from #{tmp_path}.")
@@ -35,6 +46,13 @@ class YoutubeTrailersController < ApplicationController
     # Clean the tmp directory before starting
     clean_tmp_directory
 
+    # Check if scraping has been stopped before processing
+    unless check_scraping_status
+      Rails.logger.info("Scraping stopped before processing started.")
+      render json: { status: "stopped", message: "Scraping stopped by user." }, status: :ok
+      return
+    end
+
     uploaded_file = params[:file]
     file_path = uploaded_file.tempfile.path
 
@@ -43,13 +61,20 @@ class YoutubeTrailersController < ApplicationController
     @@progress[:current] = 0
 
     csv_data = CSV.read(file_path, headers: true)
+
+    # Check scraping status again after loading CSV
+    unless check_scraping_status
+      Rails.logger.info("Scraping stopped before processing CSV rows.")
+      render json: { status: "stopped", message: "Scraping stopped by user." }, status: :ok
+      return
+    end
+
     @@progress[:total] = csv_data.size
 
     if csv_data.headers == %w[idTag YoutubeLink]
       handle_new_csv(csv_data, today_date)
     else
       render json: { error: "Invalid CSV format. Please upload a valid file." }, status: :unprocessable_entity
-      nil
     end
   end
 
@@ -106,14 +131,11 @@ class YoutubeTrailersController < ApplicationController
     bucket = s3_client.bucket(ENV["AWS_BUCKET_NAME"])
     zip_object = bucket.object(zip_key)
 
-    zip_ready = false
-    if zip_object.exists?
-      # Check if the Content-Length is greater than zero
-      zip_ready = zip_object.content_length.positive?
-    end
+    # Check ZIP ready status
+    @@zip_ready = zip_object.exists? && zip_object.content_length.positive?
 
     Rails.logger.info("Checking for ZIP file in S3: #{zip_key}")
-    Rails.logger.info("ZIP ready status: #{zip_ready}")
+    Rails.logger.info("ZIP ready status: #{@@zip_ready}")
 
     render json: {
       current: @@progress[:current] || 0,
@@ -123,42 +145,29 @@ class YoutubeTrailersController < ApplicationController
       unsuccessful_details: @@progress[:unsuccessful],
       current_log: @@current_log || "No logs yet.",
       total: @@progress[:total] || 1,
-      zip_ready: zip_ready
+      zip_ready: @@zip_ready
     }
-  end
-
-  def pause_scraping
-    File.write(Rails.root.join("tmp", "scraping_paused"), "")
-    @@current_log = "Scraping paused by user."
-    Rails.logger.info(@@current_log)
-    render json: { status: "paused" }
-  end
-
-  def resume_scraping
-    paused_file = Rails.root.join("tmp", "scraping_paused")
-    File.delete(paused_file) if File.exist?(paused_file)
-    @@current_log = "Scraping resumed by user."
-    Rails.logger.info(@@current_log)
-    render json: { status: "resumed" }
   end
 
   def stop_scraping
     File.write(Rails.root.join("tmp", "scraping_stopped"), "")
     @@current_log = "Scraping stopped by user."
     Rails.logger.info(@@current_log)
-    render json: { status: "stopped" }
+
+    render json: { status: "stopped", message: "Scraping has been stopped successfully." }
   end
 
   def scrape_youtube_data(youtube_link, id_tag, zip, today_date)
     return false unless youtube_link =~ /\Ahttps:\/\/(www\.)?youtube\.com\/watch\?v=.+/
 
-    begin
-      # Check pause/stop before starting
-      unless check_scraping_status
-        finalize_scraping(zip, today_date)
-        return false
-      end
+    # Check if scraping should stop before starting
+    unless check_scraping_status
+      @@current_log = "Scraping stopped by user."
+      Rails.logger.info(@@current_log)
+      return false
+    end
 
+    begin
       Rails.logger.info("Processing YouTube link: #{youtube_link}")
 
       # Track success status for individual steps
@@ -186,12 +195,17 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
+
   private
 
-  # Check if scraping is paused
-  def scraping_paused?
-    paused = File.exist?(Rails.root.join("tmp", "scraping_paused"))
-    paused
+  def reset_progress
+    @@progress = {
+      current: 0,
+      total: 0,
+      successful: [],
+      unsuccessful: []
+    }
+    @@current_log = ""
   end
 
   def scraping_stopped?
@@ -211,47 +225,35 @@ class YoutubeTrailersController < ApplicationController
       upload_zip_to_s3(tempfile, today_date)
     end
 
+    reset_progress
     clean_up_state_files
   end
 
   def clean_up_state_files
-    File.delete(Rails.root.join("tmp", "scraping_paused")) if File.exist?(Rails.root.join("tmp", "scraping_paused"))
     File.delete(Rails.root.join("tmp", "scraping_stopped")) if File.exist?(Rails.root.join("tmp", "scraping_stopped"))
   end
 
   def check_scraping_status
-    loop do
-      if scraping_stopped?
-        @@current_log = "Scraping stopped. Finalizing the ZIP file..."
-        Rails.logger.debug("check_scraping_status: Scraping stopped detected.")
-        Rails.logger.info(@@current_log)
-        return false # Stop processing
-      end
-
-      if scraping_paused?
-        @@current_log = "Scraping paused. Waiting to resume..."
-        Rails.logger.debug("check_scraping_status: Scraping paused detected.")
-        Rails.logger.info(@@current_log)
-
-        # Wait until resumed
-        sleep(1) while scraping_paused?
-        @@current_log = "Scraping resumed."
-        Rails.logger.info(@@current_log)
-      else
-        break # Continue processing when neither paused nor stopped
-      end
+    if scraping_stopped?
+      @@current_log = "Scraping stopped. Finalizing results..."
+      Rails.logger.info(@@current_log)
+      return false # Indicate that scraping should stop
     end
+    true # Continue scraping if not stopped
+  end
 
-    true # Indicate the process should continue
+  def scraping_stopped?
+    File.exist?(Rails.root.join("tmp", "scraping_stopped"))
   end
 
   def handle_new_csv(csv_data, today_date)
     Tempfile.create([ "youtube_trailers", ".zip" ]) do |tempfile|
       Zip::OutputStream.open(tempfile) do |zip|
         csv_data.each_with_index do |row, index|
-          # Check pause/stop before processing
+          # Stop scraping if the status is stopped
           unless check_scraping_status
-            finalize_scraping(zip, today_date)
+            finalize_scraping(zip, today_date) # Finalize results
+            Rails.logger.info("Scraping stopped during CSV processing.")
             return # Exit the method after finalizing
           end
 
@@ -263,6 +265,7 @@ class YoutubeTrailersController < ApplicationController
         end
       end
 
+      # Finalize ZIP file after successful scraping
       tempfile.rewind
       upload_zip_to_s3(tempfile, today_date)
     end
@@ -272,16 +275,24 @@ class YoutubeTrailersController < ApplicationController
     # Include the date prefix in the S3 key
     full_s3_key = "#{today_date}-Batch/#{s3_key}"
 
+    # Check if scraping should stop
+    unless check_scraping_status
+      @@current_log = "Scraping stopped while processing #{data_type} for #{link}."
+      Rails.logger.info(@@current_log)
+      return false
+    end
+
     # Check if the file already exists on S3
     if s3_file_exists?(full_s3_key)
       @@current_log = "Skipping #{data_type} for #{link}: File already exists on S3."
       Rails.logger.info(@@current_log)
-      return
+      return true
     end
 
-    # Rest of the method remains the same
+    # Prepare output file path
     output_file = Rails.root.join("tmp", "#{data_type}-#{SecureRandom.uuid}")
 
+    # Command mapping for yt-dlp
     command_map = {
       "title" => "--print 'title'",
       "description" => "--write-description --skip-download -o '#{output_file}.description'",
@@ -293,6 +304,13 @@ class YoutubeTrailersController < ApplicationController
     Rails.logger.info(@@current_log)
 
     result = `#{command}`
+
+    # Check again after command execution for stop status
+    unless check_scraping_status
+      @@current_log = "Scraping stopped after processing #{data_type} for #{link}."
+      Rails.logger.info(@@current_log)
+      return false
+    end
 
     if data_type == "title"
       return if result.strip.empty?
@@ -312,11 +330,12 @@ class YoutubeTrailersController < ApplicationController
     elsif is_file
       system(command)
 
+      # Find the generated file
       file_path = Dir.glob("#{output_file}*").find { |f| File.exist?(f) }
       unless file_path
         @@current_log = "File not found for #{data_type}."
         Rails.logger.error(@@current_log)
-        return
+        return false
       end
 
       folder_name = Rails.root.join("tmp", File.dirname(s3_key))
@@ -338,22 +357,32 @@ class YoutubeTrailersController < ApplicationController
       zip.write(result.strip)
       upload_to_s3(full_s3_key, result.strip)
     end
+
+    true
   rescue StandardError => e
     @@current_log = "Error processing #{data_type} for #{link}: #{e.message}"
     Rails.logger.error(@@current_log)
+    false
   end
 
   def fetch_youtube_video(link, zip, s3_key, today_date)
     # Include the date prefix in the S3 key
     full_s3_key = "#{today_date}-Batch/#{s3_key}"
 
+    unless check_scraping_status
+      @@current_log = "Scraping stopped while downloading video for #{link}."
+      Rails.logger.info(@@current_log)
+      return false
+    end
+
     # Check if the video already exists on S3
     if s3_file_exists?(full_s3_key)
       @@current_log = "Skipping video for #{link}: File already exists on S3."
       Rails.logger.info(@@current_log)
-      return
+      return true
     end
 
+    # Prepare paths and folders
     folder_name = File.dirname(s3_key)
     local_temp_path = Rails.root.join("tmp", folder_name)
     FileUtils.mkdir_p(local_temp_path)
@@ -364,26 +393,46 @@ class YoutubeTrailersController < ApplicationController
     @@current_log = "Downloading video for #{link}..."
     Rails.logger.info(@@current_log)
 
-    # Execute the command
+    # Execute the download command
     `#{video_command}`
 
-    if File.exist?(temp_video_path)
-      @@current_log = "[info] Video successfully downloaded for #{link}."
-    else
-      @@current_log = "[error] Failed to download video for #{link}."
+    if $? != 0
+      @@current_log = "Error downloading video for #{link}: Command failed with status #{$?.exitstatus}"
+      Rails.logger.error(@@current_log)
+      return false
     end
 
-    return unless File.exist?(temp_video_path)
+    # Check again after command execution for stop status
+    unless check_scraping_status
+      @@current_log = "Scraping stopped after downloading video for #{link}."
+      Rails.logger.info(@@current_log)
+      File.delete(temp_video_path) if File.exist?(temp_video_path)
+      return false
+    end
 
+    # Validate the downloaded file
+    unless File.exist?(temp_video_path)
+      @@current_log = "[error] Failed to download video for #{link}. File does not exist."
+      Rails.logger.error(@@current_log)
+      return false
+    end
+
+    # Add to ZIP and upload to S3
     data = File.read(temp_video_path)
     zip.put_next_entry(s3_key)
     zip.write(data)
     upload_to_s3(full_s3_key, temp_video_path)
 
+    # Clean up local file
     File.delete(temp_video_path)
+
+    @@current_log = "[info] Video successfully downloaded and uploaded for #{link}."
+    Rails.logger.info(@@current_log)
+    true
   rescue StandardError => e
     @@current_log = "Error downloading video for #{link}: #{e.message}"
     Rails.logger.error(@@current_log)
+    false
   end
 
   def s3_file_exists?(key)
@@ -425,6 +474,7 @@ class YoutubeTrailersController < ApplicationController
 
       # Upload the rebuilt ZIP file
       bucket.object(zip_key).put(body: tempfile.read)
+      @@zip_ready = true
       Rails.logger.info("ZIP file updated and uploaded to S3: #{zip_key}")
     end
   end
