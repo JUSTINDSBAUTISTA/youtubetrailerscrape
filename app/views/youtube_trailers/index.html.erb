@@ -10,10 +10,6 @@
       </div>
       <div class="form-actions" id="form-actions">
         <%= form.submit "Start Scraping", class: "submit-btn", id: "scrape-button" %>
-        <button class="control-btn" id="pause-button" style="background-color: #ff9800; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Pause</button>
-        <button class="control-btn" id="resume-button" style="background-color: #4caf50; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Continue</button>
-        <button class="control-btn" id="stop-button" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Stop</button>
-        <button class="control-btn" id="reset-button" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Reset</button>
       </div>
     <% end %>
 
@@ -35,7 +31,7 @@
     <!-- Successful and Unsuccessful tables -->
     <div style="margin-top: 20px;">
       <h3 style="margin-bottom: 0;">Successfully Scraped</h3>
-      <table id="successful-table" border="1" style="width: 100%; border-collapse: collapse;  margin-top: 0;">
+      <table id="successful-table" border="1" style="width: 100%; border-collapse: collapse; margin-top: 0;">
         <thead>
           <tr>
             <th style="padding: 10px; text-align: left;">ID Tag</th>
@@ -72,10 +68,6 @@
   document.addEventListener("DOMContentLoaded", function () {
     const scrapeForm = document.getElementById("scrape-form");
     const scrapeButton = document.getElementById("scrape-button");
-    const pauseButton = document.getElementById("pause-button");
-    const resumeButton = document.getElementById("resume-button");
-    const stopButton = document.getElementById("stop-button");
-    const resetButton = document.getElementById("reset-button");
     const progressBarContainer = document.getElementById("progress-bar-container");
     const progressBar = document.getElementById("progress-bar");
     const statusMessage = document.getElementById("status-message");
@@ -86,9 +78,6 @@
     const successfulTable = document.getElementById("successful-table")?.querySelector("tbody");
     const unsuccessfulTable = document.getElementById("unsuccessful-table")?.querySelector("tbody");
     const timerDisplay = document.getElementById("timer-display"); // Timer display element
-
-    // Add a flag to determine if scraping is active
-    let isScrapingActive = false;
 
     // Timer variables
     let timerInterval = null;
@@ -113,32 +102,26 @@
       }, 1000);
     }
 
-    // Pause the timer
-    function pauseTimer() {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
-
     // Reset the timer
     function resetTimer() {
-      pauseTimer();
+      clearInterval(timerInterval);
       elapsedSeconds = 0;
       timerDisplay.textContent = "00:00:00";
     }
 
     scrapeButton.addEventListener("click", function (event) {
-      event.preventDefault();
+      // Ensure the file input is checked before proceeding
+      if (!scrapeForm.file.value) {
+        alert("Please select a file to upload.");
+        event.preventDefault(); // Prevent submission if no file is selected
+        return;
+      }
 
-      // Set scraping as active
-      isScrapingActive = true;
+      // Prevent default form behavior
+      event.preventDefault();
 
       // Start the timer
       startTimer();
-
-      // Hide Start button and show Pause and Stop buttons
-      scrapeButton.style.display = "none";
-      pauseButton.style.display = "inline-block";
-      stopButton.style.display = "inline-block";
 
       // Reset progress bar and status message
       progressBarContainer.style.display = "block";
@@ -149,97 +132,16 @@
       // Start progress tracking
       fetchProgress();
 
-      // Submit the form
+      // Manually submit the form
       scrapeForm.submit();
     });
-
-    pauseButton.addEventListener("click", function () {
-      pauseTimer(); // Pause the timer
-      fetch("/youtube_trailers/pause_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
-        .then(() => {
-          statusMessage.textContent = "Scraping paused.";
-          pauseButton.style.display = "none";
-          resumeButton.style.display = "inline-block"; // Show Resume button
-        })
-        .catch((error) => {
-          console.error("Error pausing scraping:", error);
-        });
-    });
-
-    resumeButton.addEventListener("click", function () {
-      startTimer(); // Resume the timer
-      fetch("/youtube_trailers/resume_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
-        .then(() => {
-          statusMessage.textContent = "Resuming scraping...";
-          resumeButton.style.display = "none";
-          pauseButton.style.display = "inline-block"; // Show Pause button again
-        })
-        .catch((error) => {
-          console.error("Error resuming scraping:", error);
-        });
-    });
-
-    stopButton.addEventListener("click", function () {
-      pauseTimer(); // Pause the timer
-      fetch("/youtube_trailers/stop_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
-        .then(() => {
-          isScrapingActive = false; // Mark scraping as inactive
-          statusMessage.textContent = "Scraping stopped.";
-          pauseButton.style.display = "none";
-          resumeButton.style.display = "none";
-          stopButton.style.display = "none";
-          scrapeButton.style.display = "inline-block"; // Show Start button again
-
-          // Show the modal after stopping
-          showDownloadModal();
-        })
-        .catch((error) => {
-          console.error("Error stopping scraping:", error);
-        });
-    });
-
-    resetButton.addEventListener("click", function () {
-      resetTimer(); // Reset the timer
-      fetch("/youtube_trailers/reset_scraping", { method: "POST", headers: { "X-CSRF-Token": csrfToken } })
-        .then(() => {
-          isScrapingActive = false; // Mark scraping as inactive
-          statusMessage.textContent = "";
-          progressBarContainer.style.display = "none";
-          pauseButton.style.display = "none";
-          resumeButton.style.display = "none";
-          stopButton.style.display = "none";
-          resetButton.style.display = "none";
-          downloadModal.style.display = "none";
-          scrapeButton.style.display = "inline-block"; // Show Start button again
-
-          // Clear the file input
-          const fileInput = scrapeForm.querySelector('input[type="file"]');
-          if (fileInput) {
-            fileInput.value = ""; // Reset the file input field
-          }
-
-          // Clear tables
-          if (successfulTable) successfulTable.innerHTML = "";
-          if (unsuccessfulTable) unsuccessfulTable.innerHTML = "";
-        })
-        .catch((error) => {
-          console.error("Error resetting scraping:", error);
-        });
-    });
-
     function fetchProgress() {
-      if (!isScrapingActive) {
-        console.log("No active scraping session. Skipping progress fetch.");
-        return; // Exit if scraping is not active
-      }
-
       fetch("<%= progress_youtube_trailers_path %>")
         .then((response) => {
           if (!response.ok) throw new Error("Failed to fetch progress.");
           return response.json();
         })
         .then((data) => {
-          console.log("Progress data:", data);
           const current = data.current || 0;
           const total = data.total || 1;
           const percentage = Math.floor((current / total) * 100);
@@ -250,6 +152,8 @@
 
           // Update status message
           const currentLog = data.current_log || "Processing...";
+          const zipReady = data.zip_ready || false;
+
           statusMessage.textContent = `Progress: ${current}/${total}. ${currentLog}`;
 
           // Update tables
@@ -261,17 +165,18 @@
             populateTable(unsuccessfulTable, data.unsuccessful_details);
           }
 
+          // Show modal when ZIP is ready
+          if (zipReady && downloadModal.style.display === "none") {
+            showDownloadModal();
+          }
+
           // Continue polling if not complete
           if (percentage < 100 && !data.stopped) {
             setTimeout(fetchProgress, 1000);
-          } else {
-            isScrapingActive = false; // Mark scraping as inactive
-            pauseButton.style.display = "none";
-            resumeButton.style.display = "none";
-            stopButton.style.display = "none";
-            resetButton.style.display = "inline-block";
-            statusMessage.textContent = "Scraping completed successfully!";
-            showDownloadModal();
+          } else if (!zipReady) {
+            resetTimer();
+            statusMessage.textContent = "Scraping completed but waiting for ZIP to be ready...";
+            setTimeout(fetchProgress, 1000); // Keep polling for ZIP readiness
           }
         })
         .catch((error) => {
@@ -300,38 +205,21 @@
     function showDownloadModal() {
       const mainContent = document.getElementById("main-content");
 
-      pauseTimer();
-
-      downloadModal.style.display = "block";
-      mainContent.classList.add("blur-background");
+      downloadModal.style.display = "block"; // Display modal
+      mainContent.classList.add("blur-background"); // Add blur effect
 
       // Confirm download button
-      confirmDownload.addEventListener("click", function () {
+      confirmDownload.onclick = function () {
         downloadModal.style.display = "none";
-        scrapeButton.style.display = "none";
         mainContent.classList.remove("blur-background");
         window.location.href = "<%= download_zip_youtube_trailers_path(zip_name: "#{Date.today.strftime('%Y-%m-%d')}-Batch/youtube_trailers_data.zip") %>";
-      });
+      };
 
       // Cancel download button
-      cancelDownload.addEventListener("click", function () {
+      cancelDownload.onclick = function () {
         downloadModal.style.display = "none";
         mainContent.classList.remove("blur-background");
-
-        pauseTimer();
-
-      });
+      };
     }
-
-    // Close modal when clicking outside (optional)
-    window.addEventListener("click", function (event) {
-      if (event.target === downloadModal) {
-        downloadModal.style.display = "none";
-        const mainContent = document.getElementById("main-content");
-        mainContent.classList.remove("blur-background");
-
-        pauseTimer();
-      }
-    });
   });
 </script>

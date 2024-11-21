@@ -5,9 +5,6 @@ Rails.application.routes.draw do
       post :retry_failed
       get :progress
       get :download_zip
-      post :pause_scraping
-      post :resume_scraping
-      post :stop_scraping
     end
   end
 
