@@ -47,8 +47,8 @@
       <table id="unsuccessful-table" border="1" style="width: 100%; border-collapse: collapse; margin-top: 0;">
         <thead>
           <tr>
-            <th style="padding: 10px; text-align: left; background-color: red;">ID Tag</th>
-            <th style="padding: 10px; text-align: left; background-color: red;">YouTube Link</th>
+            <th style="padding: 10px; text-align: left; background-color: grey;">ID Tag</th>
+            <th style="padding: 10px; text-align: left; background-color: grey;">YouTube Link</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -125,6 +125,14 @@
       timerDisplay.textContent = "00:00:00";
     }
 
+    // Freeze the timer
+    function freezeTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null; // Prevent accidental restarts
+      }
+    }
+
     scrapeButton.addEventListener("click", function (event) {
       // Ensure the file input is checked before proceeding
       if (!scrapeForm.file.value) {
@@ -187,10 +195,11 @@
           }
 
           // Show modal when ZIP is ready
-          if (zipReady && downloadModal.style.display === "none") {
+          if (zipReady && percentage === 100 && downloadModal.style.display === "none") {
             showDownloadModal();
+            freezeTimer();
           }
-
+          
           // Continue polling if not complete
           if (percentage < 100 && !data.stopped) {
             setTimeout(fetchProgress, 1000);
@@ -208,18 +217,28 @@
     }
 
     function populateTable(table, data) {
-      table.innerHTML = ""; // Clear existing rows
       data.forEach((row) => {
-        const tr = document.createElement("tr");
-        const idTagTd = document.createElement("td");
-        const linkTd = document.createElement("td");
+        // Check if the row already exists in the table
+        const existingRows = Array.from(table.querySelectorAll("tr"));
+        const isDuplicate = existingRows.some((tr) => {
+          const idTagCell = tr.cells[0]?.textContent.trim(); // ID Tag column
+          const linkCell = tr.cells[1]?.textContent.trim(); // YouTube Link column
+          return idTagCell === row.idTag && linkCell === row.YoutubeLink;
+        });
 
-        idTagTd.textContent = row.idTag;
-        linkTd.innerHTML = `<a href="${row.YoutubeLink}" target="_blank">${row.YoutubeLink}</a>`;
+        if (!isDuplicate) {
+          // Create a new row and append it if not a duplicate
+          const tr = document.createElement("tr");
+          const idTagTd = document.createElement("td");
+          const linkTd = document.createElement("td");
 
-        tr.appendChild(idTagTd);
-        tr.appendChild(linkTd);
-        table.appendChild(tr);
+          idTagTd.textContent = row.idTag;
+          linkTd.innerHTML = `<a href="${row.YoutubeLink}" target="_blank">${row.YoutubeLink}</a>`;
+
+          tr.appendChild(idTagTd);
+          tr.appendChild(linkTd);
+          table.appendChild(tr);
+        }
       });
     }
 
@@ -233,12 +252,14 @@
       confirmDownload.onclick = function () {
         downloadModal.style.display = "none";
         mainContent.classList.remove("blur-background");
+        statusMessage.textContent = "Downloading ZIP file...";
         window.location.href = "<%= download_zip_youtube_trailers_path(zip_name: "#{Date.today.strftime('%Y-%m-%d')}-Batch/youtube_trailers_data.zip") %>";
       };
 
       // Cancel download button
       cancelDownload.onclick = function () {
         downloadModal.style.display = "none";
+        statusMessage.textContent = "Cancelled download.";
         mainContent.classList.remove("blur-background");
       };
     }
