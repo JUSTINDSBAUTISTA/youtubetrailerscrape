@@ -14,60 +14,73 @@
     <% end %>
 
     <!-- Timer display -->
-    <div id="timer-container" style="text-align: center; margin-top: 20px;">
-      <h3>Elapsed Time: <span id="timer-display" style="font-weight: bold;">00:00:00</span></h3>
-    </div>
+    <div class="grid-container">
+      <div class="grid-item">
+        <div id="timer-container" class="timer-container">
+              <h3>Elapsed Time: <span id="timer-display" class="timer-display">00:00:00</span></h3>
+        </div>
+      </div>
 
-    <!-- Progress bar for scraping process -->
-    <div class="progress-bar-container" id="progress-bar-container" style="display: none; margin-top: 20px;">
-      <div class="progress-bar" id="progress-bar" style="width: 0%; background-color: #4caf50; color: white; text-align: center; padding: 5px 0;">
-        0%
+      <div class="grid-item">
+        <div id="remaining-time-container" class="timer-container">
+              <h3>Approximate Time Remaining: <span id="remaining-time-display" class="timer-display">--:--:--</span></h3>
+        </div>
       </div>
     </div>
 
+    <!-- Progress bar for scraping process -->
+    <div class="progress-bar-container" id="progress-bar-container">
+      <div class="progress-bar" id="progress-bar">0%</div>
+    </div>
+
     <!-- Status message -->
-    <div id="status-message" style="margin-top: 10px; font-weight: bold; color: #333; opacity: 0.5;"></div>
+    <div id="status-message" class="status-message" style="opacity: 0.5;"></div>
 
-    <!-- Successful and Unsuccessful tables -->
-    <div style="margin-top: 20px;">
-      <h3 style="margin-bottom: 0;">Successfully Scraped</h3>
-      <table id="successful-table" border="1" style="width: 100%; border-collapse: collapse; margin-top: 0;">
-        <thead>
-          <tr>
-            <th style="padding: 10px; text-align: left;">ID Tag</th>
-            <th style="padding: 10px; text-align: left;">YouTube Link</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+    <!-- Tables in a single row -->
+  </div>
+</div>
 
-    <div style="margin-top: 20px;">
-      <h3 style="margin-bottom: 0;">Unsuccessfully Scraped</h3>
-      <table id="unsuccessful-table" border="1" style="width: 100%; border-collapse: collapse; margin-top: 0;">
-        <thead>
-          <tr>
-            <th style="padding: 10px; text-align: left; background-color: grey;">ID Tag</th>
-            <th style="padding: 10px; text-align: left; background-color: grey;">YouTube Link</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+<div class="table-container">
+  <!-- Successfully Scraped Table -->
+  <div class="table-wrapper">
+    <h3>Successfully Scraped</h3>
+    <table id="successful-table">
+      <thead>
+        <tr>
+          <th style="background-color: #4caf50;"};>ID Tag</th>
+          <th style="background-color: #4caf50;"};>YouTube Link</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
-    <div style="margin-top: 20px;">
-      <h3 style="margin-bottom: 0;">Invalid Links</h3>
-      <table id="invalid-table" border="1" style="width: 100%; border-collapse: collapse; margin-top: 0;">
-        <thead>
-          <tr>
-            <th style="padding: 10px; text-align: left; background-color: red;">ID Tag</th>
-            <th style="padding: 10px; text-align: left; background-color: red;">YouTube Link</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+  <!-- Unsuccessfully Scraped Table -->
+  <div class="table-wrapper">
+    <h3>Unsuccessfully Scraped</h3>
+    <table id="unsuccessful-table">
+      <thead>
+        <tr>
+          <th style="background-color: grey;">ID Tag</th>
+          <th style="background-color: grey;">YouTube Link</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
+  <!-- Invalid Links Table -->
+  <div class="table-wrapper">
+    <h3>Invalid Links</h3>
+    <table id="invalid-table">
+      <thead>
+        <tr>
+          <th style="background-color: red;">ID Tag</th>
+          <th style="background-color: red;">YouTube Link</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 </div>
 
@@ -91,8 +104,8 @@
     const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
     const successfulTable = document.getElementById("successful-table")?.querySelector("tbody");
     const unsuccessfulTable = document.getElementById("unsuccessful-table")?.querySelector("tbody");
-    const timerDisplay = document.getElementById("timer-display");
     const invalidTable = document.getElementById("invalid-table")?.querySelector("tbody");
+    const timerDisplay = document.getElementById("timer-display");
 
 
     // Timer variables
@@ -159,7 +172,7 @@
       // Manually submit the form
       scrapeForm.submit();
     });
-    
+        
     function fetchProgress() {
       fetch("<%= progress_youtube_trailers_path %>")
         .then((response) => {
@@ -181,25 +194,38 @@
 
           statusMessage.textContent = `Progress: ${current}/${total}. ${currentLog}`;
 
-          // Update tables
+          console.log("Updating tables with response data:", data);
+
+          // Populate tables with filtered data
           if (successfulTable && data.successful_details) {
-            populateTable(successfulTable, data.successful_details);
+            populateTable(successfulTable, data.successful_details, "successful");
           }
 
           if (unsuccessfulTable && data.unsuccessful_details) {
-            populateTable(unsuccessfulTable, data.unsuccessful_details);
+            populateTable(unsuccessfulTable, data.unsuccessful_details, "unsuccessful");
           }
 
           if (invalidTable && data.invalid_details) {
-            populateTable(invalidTable, data.invalid_details); // Populate invalid table
+            populateTable(invalidTable, data.invalid_details, "invalid");
+          }
+
+          // Display approximate remaining time from the backend
+          if (data.remaining_time) {
+            const { hours, minutes, seconds } = data.remaining_time;
+            document.getElementById("remaining-time-display").textContent = `${hours
+              .toString()
+              .padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+          } else {
+            document.getElementById("remaining-time-display").textContent = "--:--:--";
           }
 
           // Show modal when ZIP is ready
           if (zipReady && percentage === 100 && downloadModal.style.display === "none") {
             showDownloadModal();
             freezeTimer();
+            document.getElementById("remaining-time-display").textContent = "00:00:00"; // Set remaining time to zero
           }
-          
+
           // Continue polling if not complete
           if (percentage < 100 && !data.stopped) {
             setTimeout(fetchProgress, 1000);
@@ -216,31 +242,68 @@
         });
     }
 
-    function populateTable(table, data) {
+    // Format time as HH:MM:SS
+    function formatTime(seconds) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      return `${hours.toString().padStart(2, "0")}:${minutes
+        .toString()
+        .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
+
+
+    // State to track successfully added idTags
+    const successfulIdTags = new Set();
+
+    function populateTable(table, data, tableType = "") {
+      console.log(`Populating table (${tableType}) with data:`, data);
+
+      if (tableType === "successful") {
+        // Track successful idTags
+        data.forEach((row) => successfulIdTags.add(row.idTag));
+      }
+
+      // Clear table to prevent duplication
+      table.innerHTML = "";
+
+      // Add new rows based on filtered data
       data.forEach((row) => {
-        // Check if the row already exists in the table
-        const existingRows = Array.from(table.querySelectorAll("tr"));
-        const isDuplicate = existingRows.some((tr) => {
-          const idTagCell = tr.cells[0]?.textContent.trim(); // ID Tag column
-          const linkCell = tr.cells[1]?.textContent.trim(); // YouTube Link column
-          return idTagCell === row.idTag && linkCell === row.YoutubeLink;
-        });
+        // Skip rendering unsuccessful rows that exist in successfulIdTags
+        if (tableType === "unsuccessful" && successfulIdTags.has(row.idTag)) {
+          console.log(`Skipping unsuccessful row with idTag=${row.idTag} (already in successful)`);
+          return; // Skip this row
+        }
 
-        if (!isDuplicate) {
-          // Create a new row and append it if not a duplicate
-          const tr = document.createElement("tr");
-          const idTagTd = document.createElement("td");
-          const linkTd = document.createElement("td");
+        const tr = document.createElement("tr");
+        const idTagTd = document.createElement("td");
+        const linkTd = document.createElement("td");
 
-          idTagTd.textContent = row.idTag;
-          linkTd.innerHTML = `<a href="${row.YoutubeLink}" target="_blank">${row.YoutubeLink}</a>`;
+        idTagTd.textContent = row.idTag;
+        linkTd.innerHTML = `<a href="${row.YoutubeLink}" target="_blank">${row.YoutubeLink}</a>`;
 
-          tr.appendChild(idTagTd);
-          tr.appendChild(linkTd);
-          table.appendChild(tr);
+        tr.appendChild(idTagTd);
+        tr.appendChild(linkTd);
+        table.appendChild(tr);
+
+        console.log(`Added row to ${tableType} table:`, row);
+      });
+    }
+
+
+    function removeMatchingRow(table, idTag, link) {
+      const rows = Array.from(table.querySelectorAll("tr"));
+      rows.forEach((tr, index) => {
+        const idTagCell = tr.cells[0]?.textContent.trim();
+        const linkCell = tr.cells[1]?.textContent.trim();
+        if (idTagCell === idTag && linkCell === link) {
+          console.log(`Removing row with idTag=${idTag} and link=${link}`);
+          tr.remove();
         }
       });
     }
+
+
 
     function showDownloadModal() {
       const mainContent = document.getElementById("main-content");

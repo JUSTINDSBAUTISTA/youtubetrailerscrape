@@ -21,6 +21,7 @@ gem "jbuilder"
 
 gem "aws-sdk-s3", "~> 1.96"
 gem "dotenv-rails", groups: [ :development, :test ]
+gem "time_difference"
 
 # Use Kredis to get higher-level data types in Redis [https://github.com/rails/kredis]
 # gem "kredis"

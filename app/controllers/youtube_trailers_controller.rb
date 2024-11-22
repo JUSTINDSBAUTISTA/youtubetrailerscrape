@@ -2,7 +2,7 @@ require "csv"
 require "open-uri"
 require "zip"
 require "aws-sdk-s3"
-
+require "time_difference"
 class YoutubeTrailersController < ApplicationController
   @@progress = {
     current: 0,
@@ -126,7 +126,6 @@ class YoutubeTrailersController < ApplicationController
     redirect_to youtube_trailers_path, notice: "Retry completed. Check the updated CSV."
   end
 
-  # Display progress
   def progress
     zip_key = "#{Date.today.strftime('%Y-%m-%d')}-Batch/youtube_trailers_data.zip"
     bucket = s3_client.bucket(ENV["AWS_BUCKET_NAME"])
@@ -138,19 +137,44 @@ class YoutubeTrailersController < ApplicationController
     Rails.logger.info("Checking for ZIP file in S3: #{zip_key}")
     Rails.logger.info("ZIP ready status: #{@@zip_ready}")
 
+    # Time tracking variables
+    start_time = @@progress[:start_time] ||= Time.now # Set to now if not initialized
+    current_time = Time.now
+    elapsed_seconds = (current_time - start_time).to_i
+    completed_items = @@progress[:current] || 0
+    total_items = @@progress[:total] || 1
+
+    # Calculate remaining time
+    remaining_time = { hours: 0, minutes: 0, seconds: 0 }
+    if completed_items > 0 && completed_items < total_items
+      time_per_item = elapsed_seconds.to_f / completed_items
+      remaining_seconds = (time_per_item * (total_items - completed_items)).to_i
+
+      # Use `TimeDifference` to format remaining time
+      remaining_time_obj = Time.now + remaining_seconds
+      remaining_time = TimeDifference.between(current_time, remaining_time_obj).in_general
+    end
+
     render json: {
-      current: @@progress[:current] || 0,
+      current: completed_items,
       successful_count: @@progress[:successful].size,
       unsuccessful_count: @@progress[:unsuccessful].size,
-      invalid_links_count: @@progress[:invalid_links].size, # This is critical
+      invalid_links_count: @@progress[:invalid_links].size,
       successful_details: @@progress[:successful],
       unsuccessful_details: @@progress[:unsuccessful],
-      invalid_details: @@progress[:invalid_links], # This is where invalid links are passed
+      invalid_details: @@progress[:invalid_links],
       current_log: @@current_log || "No logs yet.",
-      total: @@progress[:total] || 1,
+      total: total_items,
+      elapsed_time: elapsed_seconds,
+      remaining_time: {
+        hours: remaining_time[:hours].to_i,
+        minutes: remaining_time[:minutes].to_i,
+        seconds: remaining_time[:seconds].to_i
+      },
       zip_ready: @@zip_ready
     }
   end
+
 
   def stop_scraping
     File.write(Rails.root.join("tmp", "scraping_stopped"), "")
