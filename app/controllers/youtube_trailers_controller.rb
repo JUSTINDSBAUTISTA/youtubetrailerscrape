@@ -96,7 +96,6 @@ class YoutubeTrailersController < ApplicationController
     end
   end
 
-
   def clean_tmp_directory
     tmp_path = Rails.root.join("tmp")
     Rails.logger.info("[clean_tmp_directory] Cleaning temporary directory: #{tmp_path}")
@@ -188,7 +187,6 @@ class YoutubeTrailersController < ApplicationController
       render json: { status: "error", message: "Failed to stop scraping. Please try again." }, status: :internal_server_error
     end
   end
-
 
   def scrape_youtube_data(youtube_link, id_tag, today_date)
     unless youtube_link =~ /\Ahttps:\/\/(www\.)?youtube\.com\/watch\?v=[\w\-]{11}\z/
@@ -466,16 +464,12 @@ class YoutubeTrailersController < ApplicationController
     Rails.logger.info("All rows processed successfully.")
   end
 
-
-
-
   def s3_file_exists?(key)
     s3_client.bucket(ENV["AWS_BUCKET_NAME"]).object(key).exists?
   rescue Aws::S3::Errors::ServiceError => e
     Rails.logger.error("Error checking S3 file existence for #{key}: #{e.message}")
     false
   end
-
 
   def upload_to_s3(key, file_path)
     obj = s3_client.bucket(ENV["AWS_BUCKET_NAME"]).object(key)

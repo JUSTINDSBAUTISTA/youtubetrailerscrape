@@ -279,11 +279,11 @@
     function gatherTableDataByType(type) {
       const table = document.querySelector(`#${type}-table tbody`);
       const rows = table.querySelectorAll("tr");
-      let data = `${type}:\n`;
+      let data = `${type}:\nidTag,YoutubeLink\n`;
       rows.forEach((row) => {
         const idTag = row.cells[0]?.textContent.trim();
         const youtubeLink = row.cells[1]?.textContent.trim();
-        data += `idTag = ${idTag}, YoutubeLink = ${youtubeLink}\n`;
+        data += `${idTag},${youtubeLink}\n`;
       });
       return data.trim();
     }
