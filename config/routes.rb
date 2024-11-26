@@ -3,8 +3,9 @@ Rails.application.routes.draw do
     collection do
       post :fetch
       post :retry_failed
+      post :stop_scraping
+      post :reset
       get :progress
-      get :download_zip
     end
   end
 

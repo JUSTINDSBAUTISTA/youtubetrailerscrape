@@ -6,10 +6,12 @@
     <%= form_with url: fetch_youtube_trailers_path, method: :post, multipart: true, class: "form-container", id: "scrape-form" do |form| %>
       <div class="form-group">
         <%= form.label :file, "Upload CSV file", class: "form-label" %>
-        <%= form.file_field :file, class: "form-input", required: true %>
+        <%= form.file_field :file, class: "form-input", accept: ".csv", required: true %>
       </div>
       <div class="form-actions" id="form-actions">
         <%= form.submit "Start Scraping", class: "submit-btn", id: "scrape-button" %>
+        <button type="button" id="reset-button" class="reset-btn" style="background-color: #2196F3; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Reset</button>
+        <button type="button" id="stop-button" class="stop-btn" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Stop Scraping</button>
       </div>
     <% end %>
 
@@ -43,12 +45,18 @@
 <div class="table-container">
   <!-- Successfully Scraped Table -->
   <div class="table-wrapper">
-    <h3>Successfully Scraped</h3>
+    <h3>
+      Successfully Scraped 
+      <span id="count" style="opacity: 0.5;">| Total: 0</span>
+      <span id="copy" class="copy-btn" style="float: right; display: none;">
+        <i class="fas fa-copy"></i>
+      </span>
+    </h3>
     <table id="successful-table">
       <thead>
         <tr>
-          <th style="background-color: #4caf50;"};>ID Tag</th>
-          <th style="background-color: #4caf50;"};>YouTube Link</th>
+          <th style="background-color: #4caf50;">ID Tag</th>
+          <th style="background-color: #4caf50;">YouTube Link</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -57,7 +65,13 @@
 
   <!-- Unsuccessfully Scraped Table -->
   <div class="table-wrapper">
-    <h3>Unsuccessfully Scraped</h3>
+    <h3>
+      Unsuccessfully Scraped 
+      <span id="count" style="opacity: 0.5;">| Total: 0</span>
+      <span id="copy" class="copy-btn" style="float: right; display: none;">
+        <i class="fas fa-copy"></i>
+      </span>
+    </h3>
     <table id="unsuccessful-table">
       <thead>
         <tr>
@@ -71,7 +85,13 @@
 
   <!-- Invalid Links Table -->
   <div class="table-wrapper">
-    <h3>Invalid Links</h3>
+    <h3>
+      Invalid Links 
+      <span id="count" style="opacity: 0.5;">| Total: 0</span>
+      <span id="copy" class="copy-btn" style="float: right; display: none;">
+        <i class="fas fa-copy"></i>
+      </span>
+    </h3>
     <table id="invalid-table">
       <thead>
         <tr>
@@ -84,29 +104,202 @@
   </div>
 </div>
 
-<!-- Modal for ZIP download confirmation -->
-<div id="download-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);">
-  <p>Scraping is complete. Would you like to download the ZIP file?</p>
-  <button id="confirm-download" style="background-color: #4caf50; color: white; padding: 10px 20px; border: none; cursor: pointer; margin-right: 10px;">Download</button>
-  <button id="cancel-download" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer;">Cancel</button>
-</div>
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const scrapeForm = document.getElementById("scrape-form");
     const scrapeButton = document.getElementById("scrape-button");
+    const stopButton = document.getElementById("stop-button");
+    const resetButton = document.getElementById("reset-button");
     const progressBarContainer = document.getElementById("progress-bar-container");
     const progressBar = document.getElementById("progress-bar");
     const statusMessage = document.getElementById("status-message");
-    const downloadModal = document.getElementById("download-modal");
-    const confirmDownload = document.getElementById("confirm-download");
-    const cancelDownload = document.getElementById("cancel-download");
     const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
     const successfulTable = document.getElementById("successful-table")?.querySelector("tbody");
     const unsuccessfulTable = document.getElementById("unsuccessful-table")?.querySelector("tbody");
     const invalidTable = document.getElementById("invalid-table")?.querySelector("tbody");
     const timerDisplay = document.getElementById("timer-display");
+    const totalCount = document.getElementById("count");
+    const copyButton = document.getElementById("copy");
+    const copyButtons = document.querySelectorAll(".copy-btn");
 
+    // Function to update the total count dynamically
+    function updateTotalCount() {
+      const successfulCount = successfulTable?.querySelectorAll("tr").length || 0;
+      const unsuccessfulCount = unsuccessfulTable?.querySelectorAll("tr").length || 0;
+      const invalidCount = invalidTable?.querySelectorAll("tr").length || 0;
+
+      const successfulHeader = document.querySelector("#successful-table").closest(".table-wrapper").querySelector("h3 span#count");
+      const unsuccessfulHeader = document.querySelector("#unsuccessful-table").closest(".table-wrapper").querySelector("h3 span#count");
+      const invalidHeader = document.querySelector("#invalid-table").closest(".table-wrapper").querySelector("h3 span#count");
+
+      successfulHeader.textContent = `| Total: ${successfulCount}`;
+      unsuccessfulHeader.textContent = `| Total: ${unsuccessfulCount}`;
+      invalidHeader.textContent = `| Total: ${invalidCount}`;
+    }
+
+    updateTotalCount(); // Initial count
+
+    function resetUI() {
+      document.getElementById("progress-bar").style.width = "0%";
+      document.getElementById("progress-bar").textContent = "0%";
+      timerDisplay.textContent = "00:00:00";
+      document.getElementById("remaining-time-display").textContent = "00:00:00";
+
+      // Clear table rows
+      document.getElementById("successful-table").querySelector("tbody").innerHTML = "";
+      document.getElementById("unsuccessful-table").querySelector("tbody").innerHTML = "";
+      document.getElementById("invalid-table").querySelector("tbody").innerHTML = "";
+
+      // Reset the counts for all tables
+      updateTotalCount();
+
+      // Reset file input and button visibility
+      document.getElementById("file").value = "";
+      scrapeButton.style.display = "inline-block";
+      stopButton.style.display = "none";
+      resetButton.style.display = "none";
+    }
+
+    let isStopping = false;
+
+        // Stop button event listener
+    stopButton.addEventListener("click", function () {
+      if (isStopping) {
+        console.log("Already stopping scraping...");
+        return;
+      }
+
+      stopButton.style.display = "none";
+      resetButton.style.display = "inline-block";
+
+      if (confirm("Are you sure you want to stop scraping?")) {
+        console.log("Stopping scraping...");
+        isStopping = true; // Prevent further interactions
+        fetch("<%= stop_scraping_youtube_trailers_path %>", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken
+          }
+        })
+          .then((response) => {
+            if (!response.ok) throw new Error("Failed to stop scraping.");
+            return response.json();
+          })
+          .then((data) => {
+            console.log("Scraping stopped:", data);
+            statusMessage.textContent = data.message || "Scraping has been stopped.";
+            statusMessage.style.color = "red";
+            freezeTimer(); // Stop the timer
+          })
+          .catch((error) => {
+            console.error("Error stopping scraping:", error);
+            statusMessage.textContent = "Error stopping scraping.";
+            statusMessage.style.color = "red";
+          });
+      }
+    });
+
+    resetButton.addEventListener("click", function () {
+
+      if (confirm("Are you sure you want to reset all progress and start fresh?")) {
+
+        resetButton.style.display = "none";
+        scrapeButton.style.display = "inline-block";
+        timerDisplay.style.color = "black";
+
+        fetch("<%= reset_youtube_trailers_path %>", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken // Ensure this is always fresh
+          }
+        })
+          .then((response) => {
+            if (!response.ok) throw new Error("Failed to reset.");
+            return response.json();
+          })
+          .then((data) => {
+            console.log("Reset successful:", data);
+            statusMessage.textContent = data.message || "Reset successful.";
+            statusMessage.style.color = "blue";
+
+            // Reset UI elements
+            resetUI();
+
+            // Reset the isStopping flag to allow fetching progress
+            isStopping = false;
+            console.log("isStopping reset to:", isStopping);
+          })
+          .catch((error) => {
+            console.error("Error resetting:", error);
+            statusMessage.textContent = "Error resetting. Please try again.";
+            statusMessage.style.color = "red";
+          });
+      }
+    });
+
+    copyButtons.forEach((button) => {
+      button.addEventListener("click", function () {
+        console.log("clicked!");
+
+        // Determine the type of table based on the button's parent container
+        const tableWrapper = button.closest(".table-wrapper");
+        const tableType = tableWrapper.querySelector("table").id.replace("-table", ""); // Extract table type
+
+        const formattedData = gatherTableDataByType(tableType);
+
+        if (formattedData) {
+          copyToClipboard(formattedData);
+          statusMessage.textContent = `Copied data from ${tableType} table!`;
+          statusMessage.style.color = "green";
+        } else {
+          statusMessage.textContent = `No data to copy from ${tableType} table.`;
+          statusMessage.style.color = "red";
+        }
+      });
+    });
+
+
+    function toggleCopyVisibility(tableType) {
+      const tableWrapper = document.querySelector(`#${tableType}-table`).closest(".table-wrapper");
+      const copySpan = tableWrapper.querySelector("span#copy");
+      const rowCount = document.querySelector(`#${tableType}-table tbody`).querySelectorAll("tr").length;
+
+      copySpan.style.display = rowCount > 0 ? "inline-block" : "none";
+
+      // Attach click listener to copy button
+      copySpan.addEventListener("click", function () {
+        const dataToCopy = gatherTableDataByType(tableType);
+        copyToClipboard(dataToCopy);
+      });
+    }
+
+    function gatherTableDataByType(type) {
+      const table = document.querySelector(`#${type}-table tbody`);
+      const rows = table.querySelectorAll("tr");
+      let data = `${type}:\n`;
+      rows.forEach((row) => {
+        const idTag = row.cells[0]?.textContent.trim();
+        const youtubeLink = row.cells[1]?.textContent.trim();
+        data += `idTag = ${idTag}, YoutubeLink = ${youtubeLink}\n`;
+      });
+      return data.trim();
+    }
+
+    function copyToClipboard(data) {
+      navigator.clipboard.writeText(data).then(
+        () => {
+          console.log("Data copied to clipboard successfully!");
+        },
+        (err) => {
+          console.error("Failed to copy data: ", err);
+          statusMessage.textContent = "Failed to copy.";
+          statusMessage.style.color = "red";
+        }
+      );
+    }
 
     // Timer variables
     let timerInterval = null;
@@ -147,39 +340,87 @@
     }
 
     scrapeButton.addEventListener("click", function (event) {
-      // Ensure the file input is checked before proceeding
+      scrapeButton.style.display = "none";
+      stopButton.style.display = "inline-block";
+
       if (!scrapeForm.file.value) {
         alert("Please select a file to upload.");
-        event.preventDefault(); // Prevent submission if no file is selected
+        event.preventDefault();
         return;
       }
 
-      // Prevent default form behavior
       event.preventDefault();
-
-      // Start the timer
+      resetTimer(); // Reset timer before starting
       startTimer();
 
-      // Reset progress bar and status message
-      progressBarContainer.style.display = "block";
       progressBar.style.width = "0%";
       progressBar.textContent = "0%";
       statusMessage.textContent = "Starting the scraping process...";
 
-      // Start progress tracking
       fetchProgress();
-
-      // Manually submit the form
       scrapeForm.submit();
     });
-        
+
+    let timesPerItem = []; // Array to store times per item
+    let lastRemainingSeconds = null; // To ensure remaining time always decreases
+
+    function calculateRemainingTime(elapsedSeconds, completedItems, totalItems) {
+      if (completedItems === 0 || completedItems >= totalItems) {
+        return "00:00:00"; // Default for no progress or completion
+      }
+
+      const remainingItems = totalItems - completedItems;
+
+      // Avoid overly optimistic estimates by capping the minimum time per item
+      const averageTimePerItem = Math.max(
+        elapsedSeconds / completedItems,
+        2 // Set a minimum of 2 seconds per item
+      );
+
+      let remainingSeconds = Math.floor(averageTimePerItem * remainingItems);
+
+      // Ensure remaining time decreases
+      if (lastRemainingSeconds !== null && remainingSeconds > lastRemainingSeconds) {
+        remainingSeconds = Math.max(lastRemainingSeconds - 1, 0); // Decrease by 1 second
+      }
+
+      // Update the last remaining time
+      lastRemainingSeconds = remainingSeconds;
+
+      // If remaining time exceeds 3 hours
+      if (remainingSeconds > 3 * 3600) {
+        const hours = Math.ceil(remainingSeconds / 3600); // Round up to the next hour
+        return `${hours}h`;
+      }
+
+      // Format as HH:MM:SS
+      const hours = Math.floor(remainingSeconds / 3600);
+      const minutes = Math.floor((remainingSeconds % 3600) / 60);
+      const seconds = remainingSeconds % 60;
+
+      return `${hours.toString().padStart(2, "0")}:${minutes
+        .toString()
+        .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    }
+
     function fetchProgress() {
+      if (isStopping) {
+        console.log("Scraping stopped: Halting further progress updates.");
+        return; // Exit if stopping
+      }
+
       fetch("<%= progress_youtube_trailers_path %>")
         .then((response) => {
-          if (!response.ok) throw new Error("Failed to fetch progress.");
+          if (!response.ok) {
+            throw new Error("Failed to fetch progress.");
+          }
           return response.json();
         })
         .then((data) => {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+
           const current = data.current || 0;
           const total = data.total || 1;
           const percentage = Math.floor((current / total) * 100);
@@ -190,55 +431,56 @@
 
           // Update status message
           const currentLog = data.current_log || "Processing...";
-          const zipReady = data.zip_ready || false;
-
           statusMessage.textContent = `Progress: ${current}/${total}. ${currentLog}`;
 
-          console.log("Updating tables with response data:", data);
-
           // Populate tables with filtered data
-          if (successfulTable && data.successful_details) {
-            populateTable(successfulTable, data.successful_details, "successful");
+          if (!isStopping) {
+            if (successfulTable && data.successful_details) {
+              populateTable(successfulTable, data.successful_details, "successful");
+            }
+            if (unsuccessfulTable && data.unsuccessful_details) {
+              populateTable(unsuccessfulTable, data.unsuccessful_details, "unsuccessful");
+            }
+            if (invalidTable && data.invalid_details) {
+              populateTable(invalidTable, data.invalid_details, "invalid");
+            }
           }
 
-          if (unsuccessfulTable && data.unsuccessful_details) {
-            populateTable(unsuccessfulTable, data.unsuccessful_details, "unsuccessful");
-          }
+          // Update approximate remaining time
+          const elapsedSeconds = data.elapsed_time || 0;
+          const remainingTimeText = calculateRemainingTime(elapsedSeconds, current, total);
+          document.getElementById("remaining-time-display").textContent = remainingTimeText;
 
-          if (invalidTable && data.invalid_details) {
-            populateTable(invalidTable, data.invalid_details, "invalid");
-          }
-
-          // Display approximate remaining time from the backend
-          if (data.remaining_time) {
-            const { hours, minutes, seconds } = data.remaining_time;
-            document.getElementById("remaining-time-display").textContent = `${hours
-              .toString()
-              .padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-          } else {
-            document.getElementById("remaining-time-display").textContent = "--:--:--";
-          }
-
-          // Show modal when ZIP is ready
-          if (zipReady && percentage === 100 && downloadModal.style.display === "none") {
-            showDownloadModal();
+          // Stop polling if scraping is stopped
+          if (data.stopped) {
             freezeTimer();
-            document.getElementById("remaining-time-display").textContent = "00:00:00"; // Set remaining time to zero
+            console.log("Scraping stopped.");
+            statusMessage.textContent = "Scraping stopped.";
+            statusMessage.style.color = "red";
+            isStopping = true; // Prevent further updates
+            return;
           }
 
           // Continue polling if not complete
-          if (percentage < 100 && !data.stopped) {
+          if (percentage < 100) {
             setTimeout(fetchProgress, 1000);
-          } else if (!zipReady) {
-            resetTimer();
-            statusMessage.textContent = "Scraping completed but waiting for ZIP to be ready...";
-            setTimeout(fetchProgress, 1000); // Keep polling for ZIP readiness
+          }
+
+          if (percentage === 100) {
+            freezeTimer();
+            statusMessage.textContent = "Scraping completed! 🎉 Reset and try again!";
+            statusMessage.style.color = "green";
+            stopButton.style.display = "none";
+            timerDisplay.style.color = "blue";
+            resetButton.style.display = "inline-block";
           }
         })
         .catch((error) => {
           console.error("Error fetching progress:", error);
-          statusMessage.textContent = "Error tracking progress. Retrying...";
-          setTimeout(fetchProgress, 2000); // Retry fetching progress
+          statusMessage.textContent = "Error tracking progress. Retrying in 2 seconds...";
+          if (!isStopping) {
+            setTimeout(fetchProgress, 2000); // Retry fetching progress
+          }
         });
     }
 
@@ -257,23 +499,14 @@
     const successfulIdTags = new Set();
 
     function populateTable(table, data, tableType = "") {
-      console.log(`Populating table (${tableType}) with data:`, data);
-
       if (tableType === "successful") {
-        // Track successful idTags
         data.forEach((row) => successfulIdTags.add(row.idTag));
       }
 
-      // Clear table to prevent duplication
-      table.innerHTML = "";
+      table.innerHTML = ""; // Clear table to prevent duplication
 
-      // Add new rows based on filtered data
       data.forEach((row) => {
-        // Skip rendering unsuccessful rows that exist in successfulIdTags
-        if (tableType === "unsuccessful" && successfulIdTags.has(row.idTag)) {
-          console.log(`Skipping unsuccessful row with idTag=${row.idTag} (already in successful)`);
-          return; // Skip this row
-        }
+        if (tableType === "unsuccessful" && successfulIdTags.has(row.idTag)) return;
 
         const tr = document.createElement("tr");
         const idTagTd = document.createElement("td");
@@ -285,11 +518,11 @@
         tr.appendChild(idTagTd);
         tr.appendChild(linkTd);
         table.appendChild(tr);
-
-        console.log(`Added row to ${tableType} table:`, row);
       });
-    }
 
+      updateTotalCount();
+      toggleCopyVisibility(tableType);
+    }
 
     function removeMatchingRow(table, idTag, link) {
       const rows = Array.from(table.querySelectorAll("tr"));
@@ -303,28 +536,5 @@
       });
     }
 
-
-
-    function showDownloadModal() {
-      const mainContent = document.getElementById("main-content");
-
-      downloadModal.style.display = "block"; // Display modal
-      mainContent.classList.add("blur-background"); // Add blur effect
-
-      // Confirm download button
-      confirmDownload.onclick = function () {
-        downloadModal.style.display = "none";
-        mainContent.classList.remove("blur-background");
-        statusMessage.textContent = "Downloading ZIP file...";
-        window.location.href = "<%= download_zip_youtube_trailers_path(zip_name: "#{Date.today.strftime('%Y-%m-%d')}-Batch/youtube_trailers_data.zip") %>";
-      };
-
-      // Cancel download button
-      cancelDownload.onclick = function () {
-        downloadModal.style.display = "none";
-        statusMessage.textContent = "Cancelled download.";
-        mainContent.classList.remove("blur-background");
-      };
-    }
   });
 </script>
