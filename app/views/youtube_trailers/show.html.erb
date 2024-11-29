@@ -1,0 +1,39 @@
+<div class="main" style="height: 100vh; display: flex; justify-content: center; align-items: center; background-color: black;">
+
+<div class="container py-5" style="overflow-y: auto; font-family: Arial, sans-serif; background-color: #f9f9f9; border-radius: 8px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);">
+  <!-- Page Header -->
+  <header class="text-center mb-5" style="border-bottom: 2px solid #e0e0e0;">
+    <h1 style="font-size: 2rem; color: #333; font-weight: bold; margin-bottom: 10px;"><%= @title || "No title available" %></h1>
+    <p style="font-size: 1rem; color: #555;">ID Tag: <strong style="color: #0073e6;"><%= params[:id] %></strong></p>
+  </header>
+
+  <!-- Main Content -->
+  <div class="row" style="margin: 0; gap: 20px;">
+    <!-- Video Section -->
+    <div class="col-md-6" style="flex: 1;">
+      <% if @video_url.present? %>
+        <div style="background-color: #000; overflow: hidden;">
+          <video controls autoplay style="width: 100%;">
+            <source src="<%= @video_url %>" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+        </div>
+      <% else %>
+        <p class="text-center" style="color: #888; font-size: 1.2rem; margin-top: 20px;">No video available for this ID tag.</p>
+      <% end %>
+    </div>
+
+    <!-- Details Section -->
+    <div class="col-md-6" style="flex: 1;">
+      <!-- Description -->
+      <section>
+        <h2 style="font-size: 1.5rem; color: #333; font-weight: bold; margin-bottom: 10px;">Description</h2>
+        <div style="max-height: 20vh; overflow-y: auto; border: 1px solid #ddd; padding: 15px; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);">
+          <p style="margin: 0; line-height: 1.8; font-size: 1rem; color: #444;"><%= @description || "No description available" %></p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+</div>
