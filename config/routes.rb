@@ -1,5 +1,5 @@
 Rails.application.routes.draw do
-  resources :youtube_trailers, only: [ :index ] do
+  resources :youtube_trailers, only: [ :index, :show ] do
     collection do
       post :fetch
       post :retry_failed

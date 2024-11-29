@@ -2,6 +2,7 @@ require "csv"
 require "open-uri"
 require "aws-sdk-s3"
 require "time_difference"
+
 class YoutubeTrailersController < ApplicationController
   protect_from_forgery with: :exception
 
@@ -14,6 +15,39 @@ class YoutubeTrailersController < ApplicationController
   }
   @@current_log = ""
   @@scraping_status = { stopped: false }
+
+  def show
+    id_tag = params[:id]
+
+    # Find the corresponding entry in the successful list
+    matching_data = @@progress[:successful].find { |data| data[:idTag] == id_tag }
+
+    unless matching_data
+      render plain: "No data found for ID tag: #{id_tag}", status: :not_found
+      return
+    end
+
+    # Generate S3 keys for video, title, and description
+    today_date = Date.today.strftime("%Y-%m-%d")
+    s3_keys = {
+      video: "#{today_date}-Batch/Video/#{id_tag}-Video.mp4",
+      title: "#{today_date}-Batch/Video_Title/#{id_tag}-Title.txt",
+      description: "#{today_date}-Batch/Video_Description/#{id_tag}-Description.txt"
+    }
+
+    # Fetch pre-signed URLs or file contents from S3
+    begin
+      @video_url = generate_presigned_url(s3_keys[:video])
+      @title = fetch_s3_file_contents(s3_keys[:title])
+      @description = fetch_s3_file_contents(s3_keys[:description])
+    rescue StandardError => e
+      Rails.logger.error("Error fetching data for ID tag #{id_tag}: #{e.message}")
+      render plain: "Error fetching data for ID tag: #{id_tag}", status: :internal_server_error
+      return
+    end
+
+    render :show
+  end
 
   def progress
     puts "Here progress...."
@@ -89,7 +123,7 @@ class YoutubeTrailersController < ApplicationController
       Rails.logger.info("[reset] Scraping status reset to: #{@@scraping_status.inspect}")
 
       Rails.logger.info("[reset] Reset process completed successfully.")
-      render json: { status: "success", message: "Scrape again. 😎" }
+      render json: { status: "success", message: "( CMD + SHIFT + R ) before you start" }
     rescue StandardError => e
       Rails.logger.error("[reset] Error during reset: #{e.message}\n#{e.backtrace.join("\n")}")
       render json: { status: "error", message: "Failed to reset. Please try again." }, status: :internal_server_error
@@ -210,29 +244,32 @@ class YoutubeTrailersController < ApplicationController
       existing_keys = s3_keys.select { |_, key| s3_file_exists?("#{today_date}-Batch/#{key}") }
       Rails.logger.info("Skipping already existing files in S3 for #{youtube_link}: #{existing_keys.keys.join(', ')}")
 
-      # Fetch only files that do not exist
+      # Fetch video first to determine if it's available
+      video_status = fetch_youtube_video(youtube_link, s3_keys[:video], today_date)
+      if video_status == :video_unavailable
+        Rails.logger.error("Video unavailable. Skipping remaining steps for #{youtube_link}.")
+        return false
+      end
+
+      # Proceed with fetching title, description, and thumbnail only if the video is available
       title_success = existing_keys[:title] || fetch_youtube_data(youtube_link, "title", s3_keys[:title], today_date)
       description_success = existing_keys[:description] || fetch_youtube_data(youtube_link, "description", s3_keys[:description], today_date, true)
       thumbnail_success = existing_keys[:thumbnail] || fetch_youtube_data(youtube_link, "thumbnail", s3_keys[:thumbnail], today_date, true)
-      video_success = existing_keys[:video] || fetch_youtube_video(youtube_link, s3_keys[:video], today_date)
 
-      # Track success or failure
-      if title_success || description_success || thumbnail_success || video_success
+      # Aggregate success or failure
+      if title_success && description_success && thumbnail_success && video_status
         @@progress[:successful] << {
           idTag: id_tag,
           YoutubeLink: youtube_link,
           title_success: title_success,
           description_success: description_success,
           thumbnail_success: thumbnail_success,
-          video_success: video_success
+          video_success: video_status
         }
-        Rails.logger.info("Partial or full success for: #{youtube_link}")
-      else
-        @@progress[:unsuccessful] << { idTag: id_tag, YoutubeLink: youtube_link }
-        Rails.logger.error("All attempts failed for: #{youtube_link}")
-      end
+        Rails.logger.info("Successfully processed video for: #{youtube_link}")
+        true
 
-      true
+      end
     rescue StandardError => e
       @@progress[:unsuccessful] << { idTag: id_tag, YoutubeLink: youtube_link }
       Rails.logger.error("Error processing #{youtube_link}: #{e.message}")
@@ -261,18 +298,23 @@ class YoutubeTrailersController < ApplicationController
     FileUtils.mkdir_p(folder_name)
 
     temp_video_path = folder_name.join(File.basename(s3_key))
-    video_command = "yt-dlp --proxy '' -f 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]' -o '#{temp_video_path}' '#{link}'"
 
+    # Use --cookies-from-browser to dynamically extract cookies
+    video_command = "yt-dlp --proxy '' --cookies-from-browser chrome --age-limit 99 -f 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]' -o '#{temp_video_path}' '#{link}'"
 
     @@current_log = "Downloading video for #{link}..."
     Rails.logger.info(@@current_log)
 
-    `#{video_command}`
+    # Execute the command and capture output
+    output = `#{video_command} 2>&1`
 
-    if $? != 0
-      @@current_log = "Error downloading video: #{link}: Command failed with status #{$?.exitstatus}"
+    Rails.logger.info("Output video info: #{output}")
+
+    if output.include?("Video unavailable") || output.include?("This content can't be played on your mobile browser")
+      @@current_log = "Error downloading video: #{link}. Video unavailable or command failed. Output: #{output}"
       Rails.logger.error(@@current_log)
-      return false
+      @@progress[:invalid_links] << { idTag: File.basename(s3_key, ".*").split("-").first, YoutubeLink: link }
+      return :video_unavailable
     end
 
     unless check_scraping_status
@@ -285,11 +327,11 @@ class YoutubeTrailersController < ApplicationController
     unless File.exist?(temp_video_path)
       @@current_log = "[error] Failed to download video for #{link}. File does not exist."
       Rails.logger.error(@@current_log)
+      @@progress[:unsuccessful] << { idTag: File.basename(s3_key, ".*").split("-").first, YoutubeLink: link }
       return false
     end
 
     upload_to_s3(full_s3_key, temp_video_path)
-
     File.delete(temp_video_path)
 
     @@current_log = "[info] Video successfully downloaded and uploaded for #{link}."
@@ -315,7 +357,9 @@ class YoutubeTrailersController < ApplicationController
       "description" => "--write-description --skip-download -o '#{output_file}.description'",
       "thumbnail" => "--write-thumbnail --skip-download -o '#{output_file}.%(ext)s'"
     }
-    command = "yt-dlp --proxy '' #{command_map[data_type]} '#{link}'"
+
+    # Redirect stderr to stdout to capture all output
+    command = "yt-dlp --proxy '' --cookies-from-browser chrome --age-limit 99 #{command_map[data_type]} '#{link}' 2>&1"
 
     @@current_log = "Fetching #{data_type} for #{link}..."
     Rails.logger.info(@@current_log)
@@ -336,23 +380,33 @@ class YoutubeTrailersController < ApplicationController
                   end)
     FileUtils.mkdir_p(folder_name)
 
+    Rails.logger.info("Hey data type: #{data_type}")
+
     if data_type == "title"
-      if result.strip.empty?
-        Rails.logger.error("Failed to fetch title for #{link}.")
+      # Filter out warning and error messages, keeping only the title
+      filtered_result = result.lines.reject { |line| line.strip.start_with?("WARNING:", "ERROR:", "HTTP Error") }.join.strip
+
+      if filtered_result.empty?
+        Rails.logger.error("Failed to fetch #{data_type} for #{link}.")
+        @@progress[:unsuccessful] << { idTag: s3_key.split("/").first, YoutubeLink: link }
         return false
       end
 
       local_file_path = folder_name.join(File.basename(s3_key))
-      File.write(local_file_path, result.strip)
+      File.write(local_file_path, filtered_result)
 
       upload_to_s3("#{today_date}-Batch/#{s3_key}", local_file_path)
       File.delete(local_file_path) if File.exist?(local_file_path)
 
-    elsif is_file
+    elsif data_type == "description" || data_type == "thumbnail" || is_file
       system(command)
 
       file_path = Dir.glob("#{output_file}*").find { |f| File.exist?(f) }
-      return false unless file_path
+      unless file_path
+        Rails.logger.error("Failed to fetch #{data_type} for #{link}. File not found.")
+        @@progress[:unsuccessful] << { idTag: s3_key.split("/").first, YoutubeLink: link }
+        return false
+      end
 
       local_file_path = folder_name.join(File.basename(s3_key))
       FileUtils.mv(file_path, local_file_path)
@@ -425,7 +479,6 @@ class YoutubeTrailersController < ApplicationController
     file_exists || stopped_flag
   end
 
-
   def handle_new_csv(csv_data, today_date)
     csv_data.each_with_index do |row, index|
       # Check if scraping was stopped before processing the row
@@ -477,7 +530,23 @@ class YoutubeTrailersController < ApplicationController
     Rails.logger.info("Uploaded to S3: #{key}")
   end
 
-  # S3 Client Configuration
+  def generate_presigned_url(s3_key)
+    s3_client = Aws::S3::Client.new(
+      region: ENV["AWS_REGION"],
+      credentials: Aws::Credentials.new(
+        ENV["AWS_ACCESS_KEY_ID"],
+        ENV["AWS_SECRET_ACCESS_KEY"]
+      )
+    )
+    signer = Aws::S3::Presigner.new(client: s3_client)
+    signer.presigned_url(:get_object, bucket: ENV["AWS_BUCKET_NAME"], key: s3_key, expires_in: 3600)
+  end
+
+  def fetch_s3_file_contents(s3_key)
+    obj = s3_client.bucket(ENV["AWS_BUCKET_NAME"]).object(s3_key)
+    obj.get.body.read.strip
+  end
+
   def s3_client
     @s3_client ||= Aws::S3::Resource.new(
       region: ENV["AWS_REGION"],
