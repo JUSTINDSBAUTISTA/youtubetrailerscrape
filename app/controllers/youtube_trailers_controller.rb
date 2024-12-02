@@ -27,11 +27,14 @@ class YoutubeTrailersController < ApplicationController
       return
     end
 
+    @video_link = matching_data[:YoutubeLink]
+
     # Generate S3 keys for video, title, and description
     today_date = Date.today.strftime("%Y-%m-%d")
     s3_keys = {
       video: "#{today_date}-Batch/Video/#{id_tag}-Video.mp4",
       title: "#{today_date}-Batch/Video_Title/#{id_tag}-Title.txt",
+      thumbnail: "#{today_date}-Batch/Thumbnail_Image/#{id_tag}-Image.jpg",
       description: "#{today_date}-Batch/Video_Description/#{id_tag}-Description.txt"
     }
 
@@ -39,6 +42,7 @@ class YoutubeTrailersController < ApplicationController
     begin
       @video_url = generate_presigned_url(s3_keys[:video])
       @title = fetch_s3_file_contents(s3_keys[:title])
+      @thumbnail_url = generate_presigned_url(s3_keys[:thumbnail])
       @description = fetch_s3_file_contents(s3_keys[:description])
     rescue StandardError => e
       Rails.logger.error("Error fetching data for ID tag #{id_tag}: #{e.message}")
@@ -365,6 +369,8 @@ class YoutubeTrailersController < ApplicationController
     Rails.logger.info(@@current_log)
 
     result = `#{command}`
+
+
 
     unless check_scraping_status
       @@current_log = "Scraping stopped after processing #{data_type} for #{link}."
