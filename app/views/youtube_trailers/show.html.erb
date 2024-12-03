@@ -1,51 +1,42 @@
-<div class="main" style="color: white; display: flex; justify-content: center; align-items: center; background-color: black;">
-  <div class="container py-5" style="overflow-y: auto; font-family: Arial, sans-serif; background-color: black; border-radius: 8px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);">
+<div class="main">
+  <div class="show-container">
     <!-- Page Header -->
-    <header class="text-center mb-5" style="margin-top: 10vh;">
-      <h1 style="font-size: 2rem; font-weight: bold; margin-bottom: 10px;"><%= @title || "No title available" %></h1>
-      <p style="font-size: 1rem;">ID Tag: <strong><%= params[:id] %></strong></p>
-      <a href="<%= @video_link %>" style="color: #6fbbff;" target="_blank">Watch on YouTube</a>
-      <br>
+    <header class="text-center">
+      <h1><%= @title || "No title available" %></h1>
+      <p>ID Tag: <strong><%= params[:id] %></strong></p>
+      <a href="<%= @video_link %>" target="_blank">Watch on YouTube</a>
     </header>
 
     <!-- Main Content -->
-    <div class="row" style="margin: 0; gap: 20px;">
-
+    <div class="content">
       <!-- Video Section -->
-      <div class="col-md-4" style="flex: 1;">
+      <div class="video-section">
         <% if @video_url.present? %>
-          <div style="overflow: hidden;">
-            <video controls autoplay style="width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
-              <source src="<%= @video_url %>" type="video/mp4">
-              Your browser does not support the video tag.
-            </video>
-          </div>
+          <video controls autoplay>
+            <source src="<%= @video_url %>" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
         <% else %>
-          <p class="text-center" style="font-size: 1.2rem; margin-top: 20px;">No video available for this ID tag.</p>
+          <p>No video available for this ID tag.</p>
         <% end %>
       </div>
 
-      <!-- Thumbnail Section -->
-      <div class="col-md-4" style="flex: 1; margin-top: 1em;">
+      <!-- Thumbnail and Description Section -->
+      <div class="thumbnail-description">
+        <!-- Thumbnail -->
         <% if @thumbnail_url.present? %>
-          <div class="text-center" style="overflow: hidden; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
-            <img src="<%= @thumbnail_url %>" alt="Thumbnail" style="width: 100%; object-fit: cover;">
+          <div class="thumbnail">
+            <img src="<%= @thumbnail_url %>" alt="Thumbnail">
           </div>
         <% else %>
-          <p class="text-center" style="font-size: 1.2rem; margin-top: 20px;">No thumbnail available for this ID tag.</p>
+          <p>No thumbnail available for this ID tag.</p>
         <% end %>
-      </div>
 
-
-      <!-- Details Section -->
-      <div class="col-md-4" style="flex: 1; margin-bottom: 10vh;">
         <!-- Description -->
-        <section>
-          <h2 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 10px;">Description</h2>
-          <div style="max-height: 20vh; overflow-y: auto;">
-            <p style="margin: 0; line-height: 1.8; font-size: 1rem;"><%= @description || "No description available" %></p>
-          </div>
-        </section>
+        <div class="description">
+          <h2>Description</h2>
+          <p><%= @description || "No description available" %></p>
+        </div>
       </div>
     </div>
   </div>
