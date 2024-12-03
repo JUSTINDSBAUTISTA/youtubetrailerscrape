@@ -485,6 +485,24 @@ class YoutubeTrailersController < ApplicationController
     file_exists || stopped_flag
   end
 
+  def convert_short_to_full_url(short_url)
+    uri = URI.parse(short_url)
+
+    # Check if it's a valid YouTube shortened URL
+    if uri.host == "youtu.be"
+      video_id = uri.path[1..] # Extract the video ID from the path (strip the leading '/')
+
+      # Construct the full YouTube URL without query parameters
+      full_url = "https://www.youtube.com/watch?v=#{video_id}"
+      full_url
+    else
+      raise ArgumentError, "Invalid YouTube shortened URL: #{short_url}"
+    end
+  rescue URI::InvalidURIError
+    Rails.logger.error("Invalid URL format: #{short_url}")
+    nil
+  end
+
   def handle_new_csv(csv_data, today_date)
     csv_data.each_with_index do |row, index|
       # Check if scraping was stopped before processing the row
@@ -498,6 +516,17 @@ class YoutubeTrailersController < ApplicationController
       id_tag = row["idTag"]
 
       begin
+
+        # Convert shortened URL to full URL if necessary
+        if youtube_link.start_with?("https://youtu.be/")
+          youtube_link = convert_short_to_full_url(youtube_link)
+          if youtube_link.nil?
+            Rails.logger.error("Failed to convert shortened URL for row #{index + 1}: #{row['YoutubeLink']}")
+            @@progress[:invalid_links] << { idTag: id_tag, YoutubeLink: row["YoutubeLink"] }
+            next
+          end
+        end
+
         # Log progress for the current row
         Rails.logger.info("Processing row #{index + 1}/#{csv_data.size}: #{youtube_link}")
         scrape_youtube_data(youtube_link, id_tag, today_date)
