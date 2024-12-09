@@ -16,6 +16,28 @@ class YoutubeTrailersController < ApplicationController
   @@current_log = ""
   @@scraping_status = { stopped: false }
 
+  def update_yt_dlp
+    Rails.logger.info("Starting YT-DLP update...")
+
+    begin
+      # Execute the command to update YT-DLP
+      output = `brew upgrade yt-dlp 2>&1`
+      Rails.logger.info("Command output: #{output}")
+
+      # Check the status of the command
+      if $?.success?
+        Rails.logger.info("YT-DLP update successful.")
+        render json: { status: "success", message: "YT-DLP updated successfully.", output: output }
+      else
+        Rails.logger.error("YT-DLP update failed.")
+        render json: { status: "error", message: "Failed to update YT-DLP.", output: output }, status: :internal_server_error
+      end
+    rescue StandardError => e
+      Rails.logger.error("Error updating YT-DLP: #{e.message}")
+      render json: { status: "error", message: "An error occurred while updating YT-DLP." }, status: :internal_server_error
+    end
+  end
+
   def show
     id_tag = params[:id]
 

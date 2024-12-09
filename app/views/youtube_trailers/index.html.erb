@@ -1,17 +1,19 @@
 <div id="main-content">
   <div class="container">
     <h1>YouTube Trailer Scraper</h1>
+    <button id="update-btn" data-url="<%= update_yt_dlp_youtube_trailers_path %>">Update YT-DLP</button>
 
+    
     <!-- Form for uploading CSV -->
     <%= form_with url: fetch_youtube_trailers_path, method: :post, multipart: true, class: "form-container", id: "scrape-form" do |form| %>
       <div class="form-group">
         <%= form.label :file, "Upload CSV file", class: "form-label" %>
         <%= form.file_field :file, class: "form-input", accept: ".csv", required: true %>
-      </div>
-      <div class="form-actions" id="form-actions">
-        <%= form.submit "Start Scraping", class: "submit-btn", id: "scrape-button" %>
-        <button type="button" id="stop-button" class="stop-btn" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Stop Scraping</button>
-        <button type="button" id="reset-button" class="reset-btn" style="color: black; padding: 10px 20px; border: none; cursor: pointer;">Reset</button>
+        <div class="form-actions" id="form-actions">
+          <%= form.submit "Start Scraping", class: "submit-btn", id: "scrape-button" %>
+          <button type="button" id="stop-button" class="stop-btn" style="background-color: #f44336; color: white; padding: 10px 20px; border: none; cursor: pointer; display: none;">Stop Scraping</button>
+          <button type="button" id="reset-button" class="reset-btn" style="color: black; padding: 10px 20px; border: none; cursor: pointer;">Reset</button>
+        </div>
       </div>
     <% end %>
 
@@ -125,6 +127,43 @@
     const copyButton = document.getElementById("copy");
     const copyButtons = document.querySelectorAll(".copy-btn");
     const gridContainer = document.querySelector(".grid-container");
+    const updateButton = document.getElementById("update-btn");
+    const updateUrl = updateButton.getAttribute("data-url"); // Fetch the URL from the data-url attribute
+
+    updateButton.addEventListener("click", function () {
+      if (confirm("Are you sure you want to update YT-DLP?")) {
+        statusMessage.textContent = "Updating YT-DLP... Please wait.";
+        statusMessage.style.color = "blue";
+
+        fetch(updateUrl, { // Use the URL dynamically set in data-url
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken,
+          },
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            if (data.status === "success") {
+              statusMessage.textContent = "YT-DLP updated successfully!";
+              statusMessage.style.color = "green";
+            } else {
+              statusMessage.textContent = "Failed to update YT-DLP.";
+              statusMessage.style.color = "red";
+            }
+          })
+          .catch((error) => {
+            console.error("Error updating YT-DLP:", error);
+            statusMessage.textContent = "An error occurred while updating YT-DLP.";
+            statusMessage.style.color = "red";
+          });
+      }
+    });
 
     // Function to update the total count dynamically
     function updateTotalCount() {
@@ -174,7 +213,8 @@
 
       if (confirm("Are you sure you want to stop scraping?")) {
         console.log("Stopping scraping...");
-        isStopping = true; // Prevent further interactions
+        fileInput.disabled = true;
+        isStopping = true;
         fetch("<%= stop_scraping_youtube_trailers_path %>", {
           method: "POST",
           headers: {
@@ -336,15 +376,16 @@
     }
 
     scrapeButton.addEventListener("click", function (event) {
-      gridContainer.style.display = "";
-      scrapeButton.style.display = "none";
-      stopButton.style.display = "inline-block";
 
       if (!scrapeForm.file.value) {
         alert("Please select a file to upload.");
         event.preventDefault();
         return;
       }
+
+      gridContainer.style.display = "";
+      scrapeButton.style.display = "none";
+      stopButton.style.display = "inline-block";
 
       event.preventDefault();
       resetTimer(); // Reset timer before starting
@@ -466,6 +507,7 @@
 
           if (percentage === 100) {
             freezeTimer();
+            fileInput.disabled = true;
             statusMessage.textContent = "Scraping completed! 🎉 Reset and try again!";
             statusMessage.style.color = "green";
             stopButton.style.display = "none";

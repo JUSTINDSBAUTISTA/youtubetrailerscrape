@@ -46,6 +46,7 @@ a:visited {
 }
 
 .form-group {
+    display: ruby;
     margin-bottom: 15px;
 }
 
