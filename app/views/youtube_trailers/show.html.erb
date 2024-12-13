@@ -9,8 +9,6 @@
 
     <!-- Main Content -->
     <div class="content">
-      <!-- Video Section -->
-      <div class="video-section">
         <% if @video_url.present? %>
           <video controls autoplay>
             <source src="<%= @video_url %>" type="video/mp4">
@@ -19,7 +17,6 @@
         <% else %>
           <p>No video available for this ID tag.</p>
         <% end %>
-      </div>
 
       <!-- Thumbnail and Description Section -->
       <div class="thumbnail-description">
